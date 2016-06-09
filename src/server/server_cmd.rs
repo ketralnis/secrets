@@ -9,8 +9,8 @@ use clap::{Arg, App, AppSettings, SubCommand};
 use sodiumoxide;
 
 use utils;
-use server_db;
-use server;
+use server::server_db;
+use server::server;
 
 pub fn main() {
     let matches = App::new("secrets-server")
@@ -105,5 +105,6 @@ pub fn main() {
 }
 
 fn init_db<P: AsRef<Path>>(path: P) {
-    server_db::ServerDb::create(path).unwrap();
+
+    let db = server_db::ServerDb::create(path).unwrap();
 }

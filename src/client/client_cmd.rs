@@ -11,7 +11,7 @@ use sodiumoxide;
 
 use utils;
 use password;
-use client;
+use client::client;
 
 // TODO this renders like crap
 const PASSWORD_SOURCE_HELP: &'static str = "Where to get the master password. Valid formats:

@@ -17,7 +17,7 @@ use openssl::ssl::error::SslError as OpenSslError;
 use openssl::ssl::SslContext;
 use openssl::ssl::SslMethod;
 
-use server_db::ServerDb;
+use server::server_db::ServerDb;
 
 quick_error! {
     #[derive(Debug)]

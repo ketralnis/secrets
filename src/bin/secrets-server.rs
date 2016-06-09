@@ -1,5 +1,7 @@
 extern crate secrets;
 
+use secrets::server::server_cmd;
+
 pub fn main() {
-    secrets::server_cmd::main()
+    server_cmd::main()
 }
