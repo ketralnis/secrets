@@ -1,10 +1,8 @@
 use std::path::Path;
-use std::rc::Rc;
 use std::cell::RefCell;
 use std::sync::Arc;
 
 use hyper;
-use hyper::client::IntoUrl;
 use hyper::net::OpensslClient;
 use hyper::net::HttpsConnector;
 use openssl::ssl::error::SslError;

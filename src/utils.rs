@@ -11,7 +11,7 @@ pub fn re_validator(name: &str, re_expr: &'static str, value: &str)
     if re.is_match(value) {
         return Ok(())
     } else {
-        return Err(format!("{:?} doesn't match {:?}",
-                           value, re_expr))
+        return Err(format!("{}: {} doesn't match /{}/",
+                           name, value, re_expr))
     }
 }

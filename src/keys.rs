@@ -20,12 +20,13 @@ pub fn create_key() -> (box_::PublicKey, box_::SecretKey) {
     return (public_key, private_key);
 }
 
-pub fn derive_key_from_password(password: &[u8], salt: pwhash::Salt,
-                                opslimit: pwhash::OpsLimit,
-                                memlimit: pwhash::MemLimit)
+pub fn derive_key_from_password(password: &[u8], salt: pwhash::Salt)
                                 -> Result<secretbox::Key, CryptoError> {
     let mut k = secretbox::Key([0; secretbox::KEYBYTES]);
     let secretbox::Key(ref mut kb) = k;
+
+    // the ops/mem limits can be changed, but that will require a version
+    // increment in encrypt_blob_with_password/decrypt_blob_with_password
     let key = try!(pwhash::derive_key(kb, password, &salt,
                                       pwhash::OPSLIMIT_INTERACTIVE,
                                       pwhash::MEMLIMIT_INTERACTIVE)
@@ -38,13 +39,10 @@ pub fn derive_key_from_password(password: &[u8], salt: pwhash::Salt,
 /// stored and decrypted again later with that password
 pub fn encrypt_blob_with_password(value: &[u8], password: &[u8])
         -> Result<Vec<u8>, CryptoError> {
-    let opslimit = pwhash::OPSLIMIT_INTERACTIVE;
-    let memlimit = pwhash::MEMLIMIT_INTERACTIVE;
-
     // derive the symetric encryption key from the password
     let nonce = secretbox::gen_nonce();
     let salt = pwhash::gen_salt();
-    let key = try!(derive_key_from_password(password, salt, opslimit, memlimit));
+    let key = try!(derive_key_from_password(password, salt));
 
     // encrypt with that key
     let ciphertext = secretbox::seal(value, &nonce, &key);
@@ -54,10 +52,6 @@ pub fn encrypt_blob_with_password(value: &[u8], password: &[u8])
 
     // encrypted blob version
     try!(ret.write_u64::<NetworkEndian>(1));
-
-    // the settings to derive the key from the password
-    try!(ret.write_u64::<NetworkEndian>(opslimit.0 as u64));
-    try!(ret.write_u64::<NetworkEndian>(memlimit.0 as u64));
 
     // the sizes of these are defined by the cipher suite
     ret.extend_from_slice(&salt[..]);
@@ -83,11 +77,6 @@ pub fn decrypt_blob_with_password(blob: &[u8], password: &[u8]) -> Result<Vec<u8
     let version = try!(rdr.read_u64::<NetworkEndian>());
     if version != 1 { return Err(CryptoError::CantDecrypt); }
 
-    let opslimit = try!(rdr.read_u64::<NetworkEndian>()) as usize;
-    let opslimit = pwhash::OpsLimit(opslimit);
-    let memlimit = try!(rdr.read_u64::<NetworkEndian>()) as usize;
-    let memlimit = pwhash::MemLimit(memlimit);
-
     let mut salt: Vec<u8> = vec![0; pwhash::SALTBYTES];
     try!(rdr.read(&mut salt));
     let salt = try!(pwhash::Salt::from_slice(&salt).ok_or(CryptoError::CantDecrypt));
@@ -99,8 +88,7 @@ pub fn decrypt_blob_with_password(blob: &[u8], password: &[u8]) -> Result<Vec<u8
     let mut ciphertext: Vec<u8> = vec![];
     try!(rdr.read_to_end(&mut ciphertext));
 
-    let derived_key = try!(derive_key_from_password(password, salt,
-                                                    opslimit, memlimit));
+    let derived_key = try!(derive_key_from_password(password, salt));
 
     let plaintext = try!(secretbox::open(&ciphertext, &nonce, &derived_key)
                         .map_err(|_: ()| CryptoError::CantDecrypt));
