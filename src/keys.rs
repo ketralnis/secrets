@@ -20,13 +20,13 @@ pub fn create_key() -> (box_::PublicKey, box_::SecretKey) {
     return (public_key, private_key);
 }
 
-pub fn derive_key_from_password(password: &str, salt: pwhash::Salt,
+pub fn derive_key_from_password(password: &[u8], salt: pwhash::Salt,
                                 opslimit: pwhash::OpsLimit,
                                 memlimit: pwhash::MemLimit)
                                 -> Result<secretbox::Key, CryptoError> {
     let mut k = secretbox::Key([0; secretbox::KEYBYTES]);
     let secretbox::Key(ref mut kb) = k;
-    let key = try!(pwhash::derive_key(kb, password.as_bytes(), &salt,
+    let key = try!(pwhash::derive_key(kb, password, &salt,
                                       pwhash::OPSLIMIT_INTERACTIVE,
                                       pwhash::MEMLIMIT_INTERACTIVE)
                     .map_err(|_: ()| CryptoError::Unknown));
@@ -34,26 +34,26 @@ pub fn derive_key_from_password(password: &str, salt: pwhash::Salt,
     Ok(key)
 }
 
-/// Encrypt a box_::SecretKey with a password, returning a blob that can be
+/// Encrypt a blob with a password, returning a blob that can be
 /// stored and decrypted again later with that password
-pub fn encrypt_key_with_password(private_key: &box_::SecretKey, password: &str)
+pub fn encrypt_blob_with_password(value: &[u8], password: &[u8])
         -> Result<Vec<u8>, CryptoError> {
-    // derive the symetric encryption key from the password
     let opslimit = pwhash::OPSLIMIT_INTERACTIVE;
     let memlimit = pwhash::MEMLIMIT_INTERACTIVE;
 
+    // derive the symetric encryption key from the password
     let nonce = secretbox::gen_nonce();
     let salt = pwhash::gen_salt();
     let key = try!(derive_key_from_password(password, salt, opslimit, memlimit));
 
     // encrypt with that key
-    let ciphertext = secretbox::seal(&private_key[..], &nonce, &key);
+    let ciphertext = secretbox::seal(value, &nonce, &key);
 
     // turn that into our stored format which includes the nonce and stuff
     let mut ret = vec![];
 
     // encrypted blob version
-    try!(ret.write_u16::<NetworkEndian>(1));
+    try!(ret.write_u64::<NetworkEndian>(1));
 
     // the settings to derive the key from the password
     try!(ret.write_u64::<NetworkEndian>(opslimit.0 as u64));
@@ -69,19 +69,18 @@ pub fn encrypt_key_with_password(private_key: &box_::SecretKey, password: &str)
     Ok(ret)
 }
 
-/// Decrypt a blob that has been stored with encrypt_key_with_poassword into a
-/// box_::SecretKey. **Note** it is not safe to use this to decrypt blobs
-/// received from untrusted sources (as the work factors for the KDF are
-/// included unauthenticated in the blob, so an attacker could cause them to be
-/// arbitrarily expensive)
-pub fn decrypt_key_with_password(blob: &[u8], password: &str) -> Result<box_::SecretKey, CryptoError> {
+/// Decrypt a blob that has been stored with encrypt_blob_with_password.
+/// **Note** it is not safe to use this to decrypt blobs received from untrusted
+/// sources (as the work factors for the KDF are included unauthenticated in the
+/// blob, so an attacker could cause them to be arbitrarily expensive)
+pub fn decrypt_blob_with_password(blob: &[u8], password: &[u8]) -> Result<Vec<u8>, CryptoError> {
     if blob.len() <= pwhash::SALTBYTES + secretbox::NONCEBYTES {
         return Err(CryptoError::CantDecrypt);
     }
 
     let mut rdr = io::Cursor::new(blob);
 
-    let version = try!(rdr.read_u16::<NetworkEndian>());
+    let version = try!(rdr.read_u64::<NetworkEndian>());
     if version != 1 { return Err(CryptoError::CantDecrypt); }
 
     let opslimit = try!(rdr.read_u64::<NetworkEndian>()) as usize;
@@ -105,10 +104,7 @@ pub fn decrypt_key_with_password(blob: &[u8], password: &str) -> Result<box_::Se
 
     let plaintext = try!(secretbox::open(&ciphertext, &nonce, &derived_key)
                         .map_err(|_: ()| CryptoError::CantDecrypt));
-
-    // what's encrypted is a private key, so make that out of the plaintext
-    let private_key = try!(box_::SecretKey::from_slice(&plaintext).ok_or(CryptoError::Unknown));
-    Ok(private_key)
+    return Ok(plaintext);
 }
 
 #[cfg(test)]
@@ -116,22 +112,22 @@ mod tests {
     use super::*;
 
     #[test]
-    pub fn test_encrypt_key_with_password() {
-        let (public, private) = create_key();
-        let password = "correct horse battery stable";
-        let encrypted_key = encrypt_key_with_password(&private, password).unwrap();
-        let decrypted_key = decrypt_key_with_password(&encrypted_key, password).unwrap();
-        assert_eq!(private, decrypted_key);
+    pub fn test_encrypt_blob_with_password() {
+        let blob = "this is a blob".as_bytes();
+        let password = "correct horse battery stable".as_bytes();
+        let encrypted_blob = encrypt_blob_with_password(blob, password).unwrap();
+        let decrypted_blob = decrypt_blob_with_password(&encrypted_blob, password).unwrap();
+        assert_eq!(blob.to_vec(), decrypted_blob);
     }
 
     #[test]
     #[should_panic]
-    pub fn test_encrypt_key_with_wrong_password() {
-        let (public, private) = create_key();
-        let good_password = "correct horse battery stable";
-        let wrong_password = "not the right password";
-        let encrypted_key = encrypt_key_with_password(&private, good_password).unwrap();
-        let decrypted_key = decrypt_key_with_password(&encrypted_key, wrong_password).unwrap();
-        assert_eq!(private, decrypted_key);
+    pub fn test_encrypt_blob_with_wrong_password() {
+        let blob = "this is another blob".as_bytes();
+        let good_password = "correct horse battery stable".as_bytes();
+        let wrong_password = "not the right password".as_bytes();
+        let encrypted_blob = encrypt_blob_with_password(blob, good_password).unwrap();
+        let decrypted_blob = decrypt_blob_with_password(&encrypted_blob, wrong_password).unwrap();
+        assert_eq!(blob.to_vec(), decrypted_blob);
     }
 }

@@ -3,22 +3,19 @@
 set -ev
 export RUST_BACKTRACE=1
 
-cargo build
+cargo test # in test mode
+
+cargo build # in dev mode
 
 rm -fr ./tmp
 mkdir tmp
 
-CLIENT="./target/debug/secrets-client -d ./tmp/client.db -p pass:password"
 SERVER="./target/debug/secrets-server -d ./tmp/server.db"
 
-$SERVER init
+$SERVER init -n $(hostname)
 sqlite3 tmp/server.db .dump
 
-# openssl genrsa -out tmp/server.key 2048
-openssl req -nodes -new -x509 -newkey rsa:2048 -sha256 -keyout tmp/ssl.key -out tmp/ssl.cert \
-    -subj "/C=US/ST=CA/L=San Francisco/O=Me, Inc./OU=/CN=$(hostname)/emailAddress=root@$(hostname)"
-
-$SERVER server --ssl-key=tmp/ssl.key --ssl-cert=tmp/ssl.cert &
+$SERVER server &
 SERVER_PID=$!
 echo started server at $SERVER_PID
 
@@ -33,18 +30,37 @@ if ! ps -p $SERVER_PID > /dev/null; then
 fi
 
 echo checking http health
-curl --insecure https://localhost:4430/api/health; echo ''
+curl --insecure https://$(hostname):4430/api/health; echo ''
 
-$CLIENT request-account -u dking -h localhost:4430 > tmp/dking.request
-cat tmp/dking.request
-sqlite3 tmp/client.db .dump
+for new_user in dking florence; do
+    echo creating user $new_user
 
-yes | $SERVER create-user -f tmp/dking.request
+    CLIENT="./target/debug/secrets-client -d ./tmp/$new_user.db -p pass:password_$new_user"
 
-# $SERVER create-user dking -f tmp/dking.request
+    $CLIENT request-account -u $new_user -h $(hostname):4430 > tmp/$new_user.request
+    cat tmp/$new_user.request
+    sqlite3 tmp/client.db .dump
 
-echo "mypassword" | $CLIENT create-service
+    yes | $SERVER create-account $new_user tmp/$new_user.request > tmp/$new_user.response
+    cat tmp/$new_user.response
 
-#
-# cargo run --bin secrets-server -- -d ./tmp/secrets.db init
-# cargo run --bin secrets-server -- -d ./tmp/secrets.db create-user dking
+    yes | $CLIENT accept-account $new_user tmp/$new_user.response
+done
+
+CLIENT1="./target/debug/secrets-client -d ./tmp/client-dking.db -p pass:password_dking"
+CLIENT2="./target/debug/secrets-client -d ./tmp/client-florence.db -p pass:password_florence"
+
+$CLIENT1 create-service twitter pass:twitterpass
+$CLIENT1 authorize twitter florence
+
+$CLIENT2 get twitter | grep twitterpass
+
+$SERVER fire florence && false || true
+$SERVER fire florence | grep -E "twitter"
+
+$CLIENT1 rotate twitter pass:newtwitterpass1 --withhold florence
+$CLIENT1 rotate twitter pass:newtwitterpass2 --only dking
+
+$SERVER fire florence
+
+$CLIENT2 get twitter && false || true

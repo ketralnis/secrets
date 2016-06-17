@@ -8,103 +8,82 @@ use env_logger;
 use clap::{Arg, App, AppSettings, SubCommand};
 use sodiumoxide;
 
+use password;
 use utils;
-use server::server_db;
 use server::server;
+use server::listener;
+use client::client_cmd::PASSWORD_SOURCE_HELP;
 
 pub fn main() {
     let matches = App::new("secrets-server")
         .arg(Arg::with_name("db")
-            .short("d").long("db")
-            .value_name("DB_FILE")
-            .help("path to the secrets database file")
-            .required(true)
-            .takes_value(true))
+             .short("d").long("db")
+             .value_name("DB_FILE")
+             .help("path to the secrets database file")
+             .required(true)
+             .takes_value(true))
+        .arg(Arg::with_name("password")
+             .short("p").long("--password")
+             .value_name("PASSWORD-SOURCE")
+             .help(PASSWORD_SOURCE_HELP)
+             .takes_value(true)
+             .default_value("pass:") // empty password
+             .validator(password::validate_password_source))
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .subcommand(SubCommand::with_name("init")
-            .about("initialise the database"))
+            .help("initialise the database")
+            .arg(Arg::with_name("name")
+                 .short("n").long("name")
+                 .help("the hostname that others will use to contact me")
+                 .takes_value(true)
+                 .required(true)))
         .subcommand(SubCommand::with_name("server")
             .about("bring up the secrets server")
             .arg(Arg::with_name("listen")
                 .short("l").long("listen")
                 .takes_value(true)
                 .default_value("0.0.0.0:4430")
-                .validator(utils::validate_host))
-            .arg(Arg::with_name("ssl-key")
-                .short("k").long("ssl-key")
-                .takes_value(true)
-                .required(true))
-            .arg(Arg::with_name("ssl-cert")
-                .short("c").long("ssl-cert")
-                .takes_value(true)
-                .required(true)))
-        // .subcommand(SubCommand::with_name("create-user")
-        //     .about("create new user")
-        //     .arg(Arg::with_name("username")
-        //         .index(1)
-        //         .required(true))
-        //     .arg(Arg::with_name("key")
-        //         .help("path to user's public key")
-        //         .short("k").long("key")
-        //         .takes_value(true)
-        //         .required(true)))
-        // .subcommand(SubCommand::with_name("disable-user")
-        //     .about("disable a user")
-        //     .arg(Arg::with_name("username")
-        //         .index(1)))
-        // .subcommand(SubCommand::with_name("rekey-user")
-        //     .about("change a user's public key")
-        //     .arg(Arg::with_name("username")
-        //         .index(1)
-        //         .required(true))
-        //     .arg(Arg::with_name("new-key")
-        //         .help("path to user's new public key")
-        //         .short("f")
-        //         .takes_value(true)
-        //         .required(true)))
+                .validator(|l| utils::validate_host("listen", &l))))
         .get_matches();
 
     env_logger::init().unwrap();
     sodiumoxide::init();
 
-    // the only command that's valid if the DB doesn't exist is init
     let mut config_file = PathBuf::new();
     config_file.push(matches.value_of_os("db").unwrap());
 
+    let pwsd = matches.value_of("password").unwrap();
+    let pws = password::parse_password_source(&pwsd).unwrap();
+    let pw = password::evaluate_password_source(pws).unwrap();
+
     let config_exists = config_file.is_file();
-    let is_init = matches.subcommand_matches("init").is_some();
-    if config_exists && is_init {
-        io::stderr().write(config_file.as_os_str().as_bytes()).unwrap();
-        io::stderr().write(b" already exists\n").unwrap();
-        exit(1);
-    } else if !config_exists && !is_init {
+
+    // the only command that's valid if the DB doesn't exist is init
+    if let ("init", Some(subargs)) = matches.subcommand() {
+        if config_exists {
+            io::stderr().write(config_file.as_os_str().as_bytes()).unwrap();
+            io::stderr().write(b" already exists\n").unwrap();
+            exit(1);
+        }
+        let cn = subargs.value_of("name").unwrap().to_string();
+        server::Server::create(config_file, cn, pw).unwrap();
+        return;
+    }
+
+    if !config_exists {
         io::stderr().write(config_file.as_os_str().as_bytes()).unwrap();
         io::stderr().write(b" not found. did you init?\n").unwrap();
         exit(1);
     }
 
-    if let ("init", subargs) = matches.subcommand() {
-        init_db(config_file);
-        return;
-    }
-
-    // everyone else needs the server DB set up
-    let db_conn = server_db::ServerDb::connect(config_file).unwrap();
+    // everyone else needs the server set up
+    let db_conn = server::Server::connect(config_file, pw).unwrap();
 
     match matches.subcommand() {
         ("server", Some(subargs)) => {
-            let ssl_key_path = subargs.value_of_os("ssl-key").unwrap();
-            let ssl_cert_path = subargs.value_of_os("ssl-cert").unwrap();
             let listen = subargs.value_of("listen").unwrap();
-            server::start_server(db_conn,
-                                 &ssl_key_path, &ssl_cert_path,
-                                 listen).unwrap()
+            listener::listen(db_conn, listen).unwrap()
         }
         _ => unreachable!()
     }
-}
-
-fn init_db<P: AsRef<Path>>(path: P) {
-
-    let db = server_db::ServerDb::create(path).unwrap();
 }

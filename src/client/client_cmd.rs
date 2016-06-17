@@ -14,7 +14,8 @@ use password;
 use client::client;
 
 // TODO this renders like crap
-const PASSWORD_SOURCE_HELP: &'static str = "Where to get the master password. Valid formats:
+// TODO move this
+pub const PASSWORD_SOURCE_HELP: &'static str = "Where to get the master password. Valid formats:
    pass:password (a literal password)
    env:VARIABLE (an environment variable)
    file:filename (read from a file; beware of newlines)
@@ -44,7 +45,7 @@ pub fn main() {
                 .required(true))
             .arg(Arg::with_name("host")
                 .short("h").long("host")
-                .validator(utils::validate_host)
+                .validator(|h| utils::validate_host("host", &h))
                 .takes_value(true)
                 .required(true)))
         .get_matches();
@@ -85,7 +86,7 @@ pub fn main() {
 
     // every command needs a valid password to proceed
     let pwsd = matches.value_of("password").unwrap().to_string();
-    let pws = password::parse_password_source(pwsd).unwrap();
+    let pws = password::parse_password_source(&pwsd).unwrap();
     let pw = password::evaluate_password_source(pws).unwrap();
 
     if let ("request-account", Some(subargs)) = matches.subcommand() {

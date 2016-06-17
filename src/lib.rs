@@ -11,18 +11,11 @@ extern crate rpassword;
 extern crate serde_json;
 extern crate term;
 extern crate byteorder;
-
-// external binaries' entry points
-// pub mod client_cmd;
-// pub mod server_cmd;
+#[cfg(test)] extern crate tempdir;
 
 mod utils;
 mod keys;
 mod password;
-
-// mod server_db;
-// mod server;
-// mod client;
 
 pub mod client {
     pub mod client_cmd;
@@ -32,5 +25,5 @@ pub mod client {
 pub mod server {
     pub mod server_cmd;
     mod server;
-    mod server_db;
+    mod listener;
 }
