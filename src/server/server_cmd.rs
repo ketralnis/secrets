@@ -44,6 +44,8 @@ pub fn main() {
                 .takes_value(true)
                 .default_value("0.0.0.0:4430")
                 .validator(|l| utils::validate_host("listen", &l))))
+        .subcommand(SubCommand::with_name("info")
+            .about("show info about the server"))
         .get_matches();
 
     env_logger::init().unwrap();
@@ -66,7 +68,9 @@ pub fn main() {
             exit(1);
         }
         let cn = subargs.value_of("name").unwrap().to_string();
-        server::Server::create(config_file, cn, pw).unwrap();
+        let mut instance = server::SecretsServer::create(config_file, cn, pw).unwrap();
+        let fingerprint = instance.ssl_fingerprint().unwrap();
+        println!("created server with fingerprint {}", fingerprint);
         return;
     }
 
@@ -77,12 +81,18 @@ pub fn main() {
     }
 
     // everyone else needs the server set up
-    let db_conn = server::Server::connect(config_file, pw).unwrap();
+    let mut instance = server::SecretsServer::connect(config_file, pw).unwrap();
 
     match matches.subcommand() {
         ("server", Some(subargs)) => {
             let listen = subargs.value_of("listen").unwrap();
-            listener::listen(db_conn, listen).unwrap()
+            listener::listen(instance, listen).unwrap()
+        },
+        ("info", _) => {
+            let fingerprint = instance.ssl_fingerprint().unwrap();
+            println!("ssl fingerprint: {}", fingerprint);
+            let cn = instance.cn().unwrap();
+            println!("cn: {}", cn);
         }
         _ => unreachable!()
     }

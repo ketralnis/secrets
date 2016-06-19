@@ -25,8 +25,8 @@ pub fn derive_key_from_password(password: &[u8], salt: pwhash::Salt)
     let mut k = secretbox::Key([0; secretbox::KEYBYTES]);
     let secretbox::Key(ref mut kb) = k;
 
-    // the ops/mem limits can be changed, but that will require a version
-    // increment in encrypt_blob_with_password/decrypt_blob_with_password
+    // the ops/mem limits can only be changed with a version increment in
+    // encrypt_blob_with_password/decrypt_blob_with_password
     let key = try!(pwhash::derive_key(kb, password, &salt,
                                       pwhash::OPSLIMIT_INTERACTIVE,
                                       pwhash::MEMLIMIT_INTERACTIVE)

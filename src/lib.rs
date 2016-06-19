@@ -9,13 +9,13 @@ extern crate openssl;
 extern crate env_logger;
 extern crate rpassword;
 extern crate serde_json;
-extern crate term;
 extern crate byteorder;
 #[cfg(test)] extern crate tempdir;
 
 mod utils;
 mod keys;
 mod password;
+mod common;
 
 pub mod client {
     pub mod client_cmd;

@@ -13,20 +13,11 @@ use openssl::ssl::error::SslError;
 use openssl::ssl::SslContext;
 use openssl::ssl::SslMethod;
 
-use server::server::Server;
-use server::server::ServerError;
-
-quick_error! {
-    #[derive(Debug)]
-    pub enum ListenerError {
-        Server(err: ServerError) {from()}
-        Ssl(err: SslError) {from()}
-        Hyper(err: HyperError) {from()}
-    }
-}
+use server::server::SecretsServer;
+use common::SecretsError;
 
 struct ServerHandler {
-    instance: Arc<Mutex<Server>>
+    instance: Arc<Mutex<SecretsServer>>
 }
 
 impl ServerHandler {
@@ -67,7 +58,7 @@ impl Handler for ServerHandler {
     }
 }
 
-fn make_ssl(instance: &mut Server) -> Result<Openssl, ListenerError> {
+fn make_ssl(instance: &mut SecretsServer) -> Result<Openssl, SecretsError> {
     let mut ssl_context = try!(SslContext::new(SslMethod::Tlsv1));
     let (public_pem, private_pem) = try!(instance.get_pems());
     try!(ssl_context.set_certificate(&public_pem));
@@ -76,7 +67,7 @@ fn make_ssl(instance: &mut Server) -> Result<Openssl, ListenerError> {
     return Ok(ssl);
 }
 
-pub fn listen(mut instance: Server, listen: &str) -> Result<(), ListenerError> {
+pub fn listen(mut instance: SecretsServer, listen: &str) -> Result<(), SecretsError> {
     let ssl = try!(make_ssl(&mut instance));
     let hyper_server = try!(HyperServer::https(listen, ssl));
     let mutexed_instance = Arc::new(Mutex::new(instance));

@@ -38,7 +38,7 @@ pub fn main() {
              .default_value("prompt")
              .validator(password::validate_password_source))
         .setting(AppSettings::SubcommandRequiredElseHelp)
-        .subcommand(SubCommand::with_name("request-account")
+        .subcommand(SubCommand::with_name("request-join")
             .arg(Arg::with_name("username")
                 .short("u").long("username")
                 .takes_value(true)
@@ -71,16 +71,16 @@ pub fn main() {
         }
     };
 
-    // the only command that's valid if the DB doesn't exist is request-account
+    // the only command that's valid if the DB doesn't exist isrequest-join
     let config_exists = config_file.is_file();
-    let is_create = matches.subcommand_matches("request-account").is_some();
+    let is_create = matches.subcommand_matches("request-join").is_some();
     if config_exists && is_create {
         io::stderr().write(config_file.as_os_str().as_bytes()).unwrap();
         io::stderr().write(b" already exists\n").unwrap();
         exit(1);
     } else if !config_exists && !is_create {
         io::stderr().write(config_file.as_os_str().as_bytes()).unwrap();
-        io::stderr().write(b" not found. did you request-account?\n").unwrap();
+        io::stderr().write(b" not found. did you request-join?\n").unwrap();
         exit(1);
     }
 
@@ -89,7 +89,7 @@ pub fn main() {
     let pws = password::parse_password_source(&pwsd).unwrap();
     let pw = password::evaluate_password_source(pws).unwrap();
 
-    if let ("request-account", Some(subargs)) = matches.subcommand() {
+    if let ("request-join", Some(subargs)) = matches.subcommand() {
         let username = subargs.value_of("username").unwrap().to_string();
         let host = subargs.value_of("host").unwrap().to_string();
         client::SecretsClient::create(config_file, host,
@@ -97,7 +97,7 @@ pub fn main() {
     }
 
     match matches.subcommand() {
-        // ("request-account", Some(subargs)) => {
+        // ("request-join", Some(subargs)) => {
         //     let username = subargs.value_of("username").unwrap().to_string();
         //     let host = subargs.value_of("host").unwrap().to_string();
         //     create_config(config_file, username, host)
