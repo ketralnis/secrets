@@ -16,9 +16,10 @@ use keys;
 use utils;
 use common::SecretsError;
 use common::init_ssl_cert;
+use common;
 
 pub struct SecretsServer {
-    db_conn: rusqlite::Connection,
+    db: rusqlite::Connection,
     password: String,
 }
 
@@ -27,22 +28,19 @@ impl SecretsServer {
                                   cn: String,
                                   password: String)
                                   -> Result<Self, SecretsError> {
-        let db_conn = try!(Self::_connect_db(config_file, true));
-        let mut server = SecretsServer {db_conn: db_conn, password: password};
 
-        let (public_key, private_key) = keys::create_key();
-        try!(server.set_global("public_key", &public_key.as_ref()));
+        let db = try!(common::create_db(config_file));
+        let mut server = SecretsServer {db: db, password: password};
+
+        let (public_key, private_key) = keys::create_keypair();
+        try!(server.set_global("public_key", public_key.as_ref()));
         try!(server.set_encrypted_global("private_key", &private_key[..]));
 
         let (public_pem_vec, private_pem_vec) = try!(init_ssl_cert(&cn));
-        // let mut public_pem_vec = vec![];
-        // try!(public_pem.write_pem(&mut public_pem_vec));
-        try!(server.set_global("public_pem", &public_pem_vec));
-        // let mut private_pem_vec = vec![];
-        // try!(private_pem.write_pem(&mut private_pem_vec));
+        try!(server.set_global("public_pem", public_pem_vec));
         try!(server.set_encrypted_global("private_pem", &private_pem_vec));
 
-        try!(server.set_global("common_name", &cn));
+        try!(server.set_global("common_name", cn));
 
         Ok(server)
     }
@@ -50,24 +48,9 @@ impl SecretsServer {
     pub fn connect<P: AsRef<Path>>(config_file: P,
                                    password: String)
                                    -> Result<Self, SecretsError> {
-        let db_conn = try!(Self::_connect_db(config_file, false));
-        let mut instance = SecretsServer {db_conn: db_conn, password: password};
-        try!(instance.check_db());
+        let db = try!(common::connect_db(config_file));
+        let mut instance = SecretsServer {db: db, password: password};
         return Ok(instance);
-    }
-
-    fn _connect_db<P: AsRef<Path>>(path: P, create: bool) -> Result<rusqlite::Connection, rusqlite::Error> {
-        let flags = if create {
-            rusqlite::SQLITE_OPEN_READ_WRITE | rusqlite::SQLITE_OPEN_CREATE
-        } else {
-            rusqlite::SQLITE_OPEN_READ_WRITE
-        };
-        let mut conn = try!(rusqlite::Connection::open_with_flags(path, flags));
-        try!(pragmas(&mut conn));
-        if create {
-            try!(create_schema(&mut conn));
-        }
-        Ok(conn)
     }
 
     pub fn ssl_fingerprint(&mut self) -> Result<String, SecretsError> {
@@ -81,12 +64,6 @@ impl SecretsServer {
     pub fn cn(&mut self) -> Result<String, SecretsError> {
         let cn = try!(self.get_global::<String>("common_name"));
         return Ok(cn);
-    }
-
-    pub fn check_db(&mut self) -> Result<(), rusqlite::Error> {
-        // just do a query that is expected to succeed, so server health checks
-        // can be helpful
-        self.db_conn.query_row("SELECT 1", &[], |_| ())
     }
 
     pub fn get_keys(&mut self) -> Result<(box_::PublicKey, box_::SecretKey), SecretsError> {
@@ -113,52 +90,30 @@ impl SecretsServer {
         return Ok((public_pem, private_pem));
     }
 
-    fn get_global<T: FromSql>(&mut self, key_name: &str) -> Result<T, rusqlite::Error> {
-        self.db_conn.query_row(
-            "SELECT value FROM globals WHERE key = ? AND NOT encrypted",
-            &[&key_name],
-            |row| { row.get(0) })
+    fn get_global<T: FromSql>(&mut self, key_name: &str) -> Result<T, SecretsError> {
+        let value = try!(common::get_global(&mut self.db, key_name));
+        Ok(value)
     }
 
-    fn set_global<T: ToSql>(&mut self, key_name: &str, value: &T) -> Result<(), rusqlite::Error> {
-        try!(self.db_conn.execute(
-            "INSERT OR REPLACE INTO globals(key, value, encrypted) VALUES(?, ?, 0)",
-            &[&key_name, value]));
+    fn set_global<T: ToSql>(&mut self, key_name: &str, value: T) -> Result<(), SecretsError> {
+        try!(common::set_global(&mut self.db, key_name, &value));
         Ok(())
     }
 
     fn get_encrypted_global(&mut self, key_name: &str) -> Result<Vec<u8>, SecretsError> {
-        let value: Vec<u8> = try!(
-            self.db_conn.query_row(
-                "SELECT value FROM globals WHERE key = ? AND encrypted",
-                &[&key_name],
-                |row| { row.get(0) }));
-        let value = try!(self.decrypt(&value));
-        return Ok(value);
+        let value = try!(common::get_encrypted_global(&mut self.db, key_name, &self.password));
+        Ok(value)
     }
 
-    fn set_encrypted_global(&mut self, key_name: &str, value: &[u8]) -> Result<(), SecretsError> {
-        let value = try!(self.encrypted(&value));
-        try!(self.db_conn.execute(
-            "INSERT OR REPLACE INTO globals(key, value, encrypted) VALUES(?, ?, 1)",
-            &[&key_name, &value]));
-        return Ok(())
+    fn set_encrypted_global(&mut self, key_name: &str, plaintext: &[u8]) -> Result<(), SecretsError> {
+        try!(common::set_encrypted_global(&mut self.db, &self.password,
+                                          key_name, plaintext));
+        Ok(())
     }
 
-    fn decrypt(&self, blob: &[u8]) -> Result<Vec<u8>, keys::CryptoError> {
-        Self::_decrypt(blob, self.password.as_bytes())
-    }
-
-    fn _decrypt(blob: &[u8], password: &[u8]) -> Result<Vec<u8>, keys::CryptoError> {
-        keys::decrypt_blob_with_password(blob, password)
-    }
-
-    fn _encrypted(data: &[u8], password: &[u8]) -> Result<Vec<u8>, keys::CryptoError> {
-        keys::encrypt_blob_with_password(data, password)
-    }
-
-    fn encrypted(&self, data: &[u8]) -> Result<Vec<u8>, keys::CryptoError> {
-        return Self::_encrypted(data, &self.password.as_bytes())
+    pub fn check_db(&mut self) -> Result<(), SecretsError> {
+        try!(common::check_db(&mut self.db));
+        Ok(())
     }
 }
 
@@ -197,20 +152,6 @@ fn create_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error>
     "));
 
     Ok(())
-}
-
-fn pragmas(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error> {
-    // sqlite config that must be done on every connection
-    conn.execute_batch("
-        PRAGMA application_id=0x53435253; -- SCRS
-        PRAGMA foreign_keys=ON;
-        PRAGMA journal_mode=DELETE;
-        PRAGMA secure_delete=true;
-
-        -- this is a (probably misguided) attempt to keep password data off of
-        -- disk at the expense of potentially crashing with OOM
-        PRAGMA temp_store=MEMORY;
-    ")
 }
 
 #[cfg(test)]

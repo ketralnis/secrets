@@ -70,7 +70,7 @@ impl SecretsClient {
         }
 
         info!("creating client DB");
-        let (public_key, private_key) = keys::create_key();
+        let (public_key, private_key) = keys::create_keypair();
 
 
         try!(io::stderr().write("send this to your local friendly secrets admin:".as_bytes()));

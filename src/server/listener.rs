@@ -1,15 +1,12 @@
 use std::sync::Mutex;
 use std::sync::Arc;
 
-use rusqlite;
 use hyper::server::{Handler, Request, Response};
 use hyper::server::Server as HyperServer;
 use hyper::method::Method;
 use hyper::status::StatusCode;
 use hyper::uri::RequestUri;
 use hyper::net::Openssl;
-use hyper::Error as HyperError;
-use openssl::ssl::error::SslError;
 use openssl::ssl::SslContext;
 use openssl::ssl::SslMethod;
 
@@ -21,7 +18,7 @@ struct ServerHandler {
 }
 
 impl ServerHandler {
-    fn check_db(&self) -> Result<(), rusqlite::Error> {
+    fn check_db(&self) -> Result<(), SecretsError> {
         self.instance.lock().unwrap().check_db()
     }
 }

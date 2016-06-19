@@ -15,7 +15,7 @@ quick_error! {
     }
 }
 
-pub fn create_key() -> (box_::PublicKey, box_::SecretKey) {
+pub fn create_keypair() -> (box_::PublicKey, box_::SecretKey) {
     let (public_key, private_key) = box_::gen_keypair();
     return (public_key, private_key);
 }
