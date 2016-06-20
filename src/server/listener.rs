@@ -12,6 +12,7 @@ use openssl::ssl::SslMethod;
 
 use server::server::SecretsServer;
 use common::SecretsError;
+use common::SecretsContainer;
 
 struct ServerHandler {
     instance: Arc<Mutex<SecretsServer>>

@@ -13,6 +13,7 @@ use utils;
 use server::server;
 use server::listener;
 use client::client_cmd::PASSWORD_SOURCE_HELP;
+use common::SecretsContainer;
 
 pub fn main() {
     let matches = App::new("secrets-server")
@@ -91,8 +92,8 @@ pub fn main() {
         ("info", _) => {
             let fingerprint = instance.ssl_fingerprint().unwrap();
             println!("ssl fingerprint: {}", fingerprint);
-            let cn = instance.cn().unwrap();
-            println!("cn: {}", cn);
+            let cn = instance.ssl_cn().unwrap();
+            println!("ssl cn: {}", cn);
         }
         _ => unreachable!()
     }

@@ -6,10 +6,7 @@ use std::sync::Arc;
 use std::rc::Rc;
 
 use hyper;
-use hyper::net::OpensslClient;
 use hyper::net::HttpsConnector;
-use openssl::ssl::error::SslError;
-use openssl::ssl::SslVerifyMode;
 use openssl::ssl::SslContext;
 use openssl::ssl::SslMethod;
 use openssl::ssl::SSL_VERIFY_PEER;
@@ -18,19 +15,24 @@ use openssl::crypto::hash::Type as HashType;
 use openssl::nid::Nid;
 use hyper::net::Openssl;
 use rusqlite;
-use serde_json;
+use serde_json::builder::ObjectBuilder;
+use serde_json::ser::to_string;
 
 use keys;
 use utils;
+use common;
+use common::init_ssl_cert;
 use common::SecretsError;
+use common::SecretsContainer;
 
 pub struct SecretsClient {
-    db_conn: rusqlite::Connection,
-    http_client: hyper::Client,
+    db: rusqlite::Connection,
+    password: String,
+    http_client: Option<hyper::Client>,
 }
 
 impl SecretsClient {
-    pub fn create<P: AsRef<Path>>(path: P, host: String,
+    pub fn create<P: AsRef<Path>>(config_file: P, host: String,
                                   username: String, password: String,
                               ) -> Result<Self, SecretsError> {
         // set up the SSL verifier to prompt them for the fingerprint
@@ -47,7 +49,7 @@ impl SecretsClient {
         // this will connect via that configured SSL client which will record
         // the server's fingerprint and CN into the recorder
         info!("connecting to {}", host);
-        try!(Self::check_health(&http, &host));
+        try!(Self::check_server_health(&http, &host));
 
         // unpack the recorder
         let ref fingerprint = *recorder.borrow();
@@ -70,18 +72,47 @@ impl SecretsClient {
         }
 
         info!("creating client DB");
-        let (public_key, private_key) = keys::create_keypair();
 
+        let mut db = try!(common::create_db(config_file));
+        try!(create_client_schema(&mut db));
+
+        let mut client = SecretsClient {
+            db: db,
+            http_client: Option::None,
+            password: password
+        };
+        try!(client.create_and_store_keys(&username));
+
+        try!(client.set_global("username", &username));
+        try!(client.set_global("server_host", &host));
+        try!(client.set_global("server_fingerprint", &fingerprint));
+        try!(client.set_global("server_common_name", &cn));
 
         try!(io::stderr().write("send this to your local friendly secrets admin:".as_bytes()));
 
-        println!("got fingerprint {}", fingerprint);
+        let client_fingerprint = try!(client.ssl_fingerprint());
+        let client_public_key = try!(client.get_global::<Vec<u8>>("public_key"));
+
+        let requester_value = ObjectBuilder::new()
+            .insert("server_fingerprint", fingerprint)
+            .insert("server_common_name", cn)
+            .insert("client_fingerprint", client_fingerprint)
+            .insert("client_username", username)
+            .insert("client_public_key", utils::hex(client_public_key))
+            .unwrap();
+        let key_sig =
+        let js = try!(to_string(&requester_value));
+        println!("{}", js);
 
         Err(SecretsError::NotImplemented("I said so"))
         // return Ok(SecretsClient {})
     }
 
-    fn check_health(http: &hyper::Client, host: &String) -> Result<(), SecretsError> {
+    fn key_sig(value: serde_json::Value) {
+
+    }
+
+    fn check_server_health(http: &hyper::Client, host: &String) -> Result<(), SecretsError> {
         let response = try!(http.get(&path(&host, "/api/health")).send());
         if response.status == hyper::Ok {
             Ok(())
@@ -144,4 +175,18 @@ pub fn verify_record(_preverify_ok: bool, x509_ctx: &X509StoreContext, data: &Rc
     }
     *data.borrow_mut() = Some((cn, fingerprint));
     return true;
+}
+
+impl SecretsContainer for SecretsClient {
+    fn get_db(&mut self) -> &mut rusqlite::Connection {
+        return &mut self.db;
+    }
+
+    fn get_password(&self) -> &String {
+        return &self.password;
+    }
+}
+
+fn create_client_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error> {
+    Ok(())
 }
