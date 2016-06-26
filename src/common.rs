@@ -21,6 +21,7 @@ use openssl::nid::Nid;
 use hyper;
 use rusqlite;
 use serde_json::Error as SerdeError;
+use serde_json::Value as JsonValue;
 
 use utils;
 use keys;
@@ -35,6 +36,8 @@ quick_error! {
         Io(err: io::Error) {from()}
         Json(err: SerdeError) {from()}
         ServerError(err: String) {} // client had a problem communicating with server
+        ServerResponseError(err: String) {} // client didn't like something the server did
+        Authentication(err: &'static str) {}
         Unknown(err: &'static str) {}
 
         NotImplemented(err: &'static str) {}
@@ -67,7 +70,7 @@ pub fn create_db<P: AsRef<Path>>(config_file: P)
 pub fn connect_db<P: AsRef<Path>>(config_file: P)
                                   -> Result<rusqlite::Connection, SecretsError> {
     let mut conn = try!(_connect_db(config_file, false));
-    try!(check_db(&mut conn));
+    try!(check_db(&conn));
     return Ok(conn);
 }
 
@@ -85,10 +88,10 @@ fn _connect_db<P: AsRef<Path>>(path: P, create: bool) -> Result<rusqlite::Connec
     Ok(conn)
 }
 
-pub fn check_db(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error> {
+pub fn check_db(conn: &rusqlite::Connection) -> Result<(), rusqlite::Error> {
     // just do a query that is expected to succeed, so server health checks
     // can be helpful
-    conn.query_row("SELECT 1", &[], |_| ())
+    conn.query_row("SELECT key from globals LIMIT 1", &[], |_| ())
 }
 
 fn pragmas(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error> {
@@ -115,12 +118,12 @@ fn create_common_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite:
 }
 
 pub trait SecretsContainer {
-    fn get_db(&mut self) -> &mut rusqlite::Connection;
+    fn get_db(&self) -> &rusqlite::Connection;
     fn get_password(&self) -> &String;
 
-    fn check_db(&mut self) -> Result<(), SecretsError> {
-        let mut db = self.get_db();
-        try!(check_db(&mut db));
+    fn check_db(&self) -> Result<(), SecretsError> {
+        let db = self.get_db();
+        try!(check_db(&db));
         Ok(())
     }
 
@@ -140,7 +143,7 @@ pub trait SecretsContainer {
         Ok(())
     }
 
-    fn get_keys(&mut self) -> Result<(box_::PublicKey, box_::SecretKey), SecretsError> {
+    fn get_keys(&self) -> Result<(box_::PublicKey, box_::SecretKey), SecretsError> {
         let public_key_vec: Vec<u8> = try!(self.get_global("public_key"));
         let public_key = box_::PublicKey::from_slice(&public_key_vec);
         let public_key = try!(public_key.ok_or(keys::CryptoError::Unknown));
@@ -152,7 +155,7 @@ pub trait SecretsContainer {
         return Ok((public_key, private_key));
     }
 
-    fn get_signs(&mut self) -> Result<(sign::PublicKey, sign::SecretKey), SecretsError> {
+    fn get_signs(&self) -> Result<(sign::PublicKey, sign::SecretKey), SecretsError> {
         let public_sign_vec: Vec<u8> = try!(self.get_global("public_sign"));
         let public_sign = sign::PublicKey::from_slice(&public_sign_vec);
         let public_sign = try!(public_sign.ok_or(keys::CryptoError::Unknown));
@@ -164,7 +167,7 @@ pub trait SecretsContainer {
         return Ok((public_sign, private_sign));
     }
 
-    fn get_pems(&mut self) -> Result<(X509, PKey), SecretsError> {
+    fn get_pems(&self) -> Result<(X509, PKey), SecretsError> {
         let public_key_vec: Vec<u8> = try!(self.get_global("public_pem"));
         let mut public_key_vec = Cursor::new(public_key_vec);
         let public_pem = try!(X509::from_pem(&mut public_key_vec));
@@ -176,7 +179,7 @@ pub trait SecretsContainer {
         return Ok((public_pem, private_pem));
     }
 
-    fn ssl_cn(&mut self) -> Result<String, SecretsError> {
+    fn ssl_cn(&self) -> Result<String, SecretsError> {
         let (public_pem, _) = try!(self.get_pems());
         let cn = public_pem.subject_name().text_by_nid(Nid::CN);
         let cn = try!(cn.ok_or(SecretsError::Unknown("pem has no CN")));
@@ -184,7 +187,7 @@ pub trait SecretsContainer {
         return Ok(cn);
     }
 
-    fn ssl_fingerprint(&mut self) -> Result<String, SecretsError> {
+    fn ssl_fingerprint(&self) -> Result<String, SecretsError> {
         let (public_key, _) = try!(self.get_pems());
         let fingerprint = public_key.fingerprint(HashType::SHA256);
         let fingerprint = try!(fingerprint.ok_or(SecretsError::Unknown("stored cert has no fingerprint")));
@@ -192,7 +195,7 @@ pub trait SecretsContainer {
         return Ok(fingerprint);
     }
 
-    fn get_global<T: FromSql>(&mut self, key_name: &str) -> Result<T, SecretsError> {
+    fn get_global<T: FromSql>(&self, key_name: &str) -> Result<T, SecretsError> {
         let conn = self.get_db();
         let value = try!(conn.query_row(
             "SELECT value FROM globals WHERE key = ? AND NOT encrypted",
@@ -209,7 +212,7 @@ pub trait SecretsContainer {
         Ok(())
     }
 
-    fn get_encrypted_global(&mut self, key_name: &str) -> Result<Vec<u8>, SecretsError> {
+    fn get_encrypted_global(&self, key_name: &str) -> Result<Vec<u8>, SecretsError> {
         let ciphertext: Vec<u8> = try!({
             let conn = self.get_db();
             conn.query_row(
@@ -235,5 +238,27 @@ pub trait SecretsContainer {
             "INSERT OR REPLACE INTO globals(key, value, encrypted) VALUES(?, ?, 1)",
             &[&key_name, &ciphertext]));
         return Ok(())
+    }
+}
+
+
+pub fn json_get_string(value: &JsonValue, name: &str) -> Result<String, SecretsError> {
+    if !value.is_object() {
+        return Err(SecretsError::ServerResponseError("is not an object".to_string()));
+    }
+    match value.as_object().unwrap().get(name) {
+        Some(v) if v.is_string() => {
+            Ok(v.as_string().unwrap().to_string())
+        }
+        Some(_) => {
+            let error_msg = format!("wrong type for {}",
+                                    name);
+            Err(SecretsError::ServerResponseError(error_msg))
+        }
+        None => {
+            let error_msg = format!("missing vital {}",
+                                    name);
+            Err(SecretsError::ServerResponseError(error_msg))
+        }
     }
 }

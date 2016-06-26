@@ -41,12 +41,19 @@ for new_user in dking florence; do
 
     yes | $CLIENT join -u $new_user -h $(hostname):4430 > tmp/$new_user.request
     cat tmp/$new_user.request
-    sqlite3 tmp/client.db .dump
+    sqlite3 tmp/$new_user.db .dump
 
-    yes | $SERVER accept-join $new_user tmp/$new_user.request > tmp/$new_user.response
-    cat tmp/$new_user.response
+    echo "checking if we're accepted (this should fail)"
+    ! $CLIENT check-server
 
-    $CLIENT check-health
+    echo "accepting $new_user"
+    yes | $SERVER accept-join tmp/$new_user.request
+
+    # should work now
+    echo "checking that we're accepted (this should succeed)"
+    $CLIENT check-server
+
+    echo client successful
 done
 
 CLIENT1="./target/debug/secrets-client -d ./tmp/client-dking.db -p pass:password_dking"
@@ -57,7 +64,7 @@ $CLIENT1 authorize twitter florence
 
 $CLIENT2 get twitter | grep twitterpass
 
-$SERVER fire florence && false || true
+! $SERVER fire florence
 $SERVER fire florence | grep -E "twitter"
 
 $CLIENT1 rotate twitter pass:newtwitterpass1 --withhold florence
@@ -68,4 +75,4 @@ $CLIENT2 decrypt < tmp/encrypted.bydavid | grep hello
 
 $SERVER fire florence
 
-$CLIENT2 get twitter && false || true
+! $CLIENT2 get twitter

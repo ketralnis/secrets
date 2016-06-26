@@ -7,7 +7,6 @@ authors = ["David King <dking@ketralnis.com>"]
 clap = "2"
 rusqlite = "0.7.3"
 sodiumoxide = "0.0.10"
-hyper = "0.9.6"
 openssl = "0.7.13"
 regex = "0.1.71"
 quick-error = "1.1.0"
@@ -17,6 +16,9 @@ rpassword = "0.2.2"
 byteorder = "0.5"
 tempdir = "0.3"
 rustc-serialize = "0.3.19"
-
 serde = "0.7.8"
 serde_json = "0.7.1"
+
+[dependencies.hyper]
+version = "0.9.7"
+features = ["openssl"]

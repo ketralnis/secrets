@@ -8,6 +8,7 @@ use std::os::unix::ffi::OsStrExt;
 use env_logger;
 use clap::{Arg, App, AppSettings, SubCommand};
 use sodiumoxide;
+use openssl::ssl::init as init_openssl;
 
 use utils;
 use password;
@@ -48,8 +49,10 @@ pub fn main() {
                 .validator(|h| utils::validate_host("host", &h))
                 .takes_value(true)
                 .required(true)))
+        .subcommand(SubCommand::with_name("check-server"))
         .get_matches();
 
+    init_openssl();
     env_logger::init().unwrap();
     sodiumoxide::init();
 
@@ -95,10 +98,15 @@ pub fn main() {
         let mut client = client::SecretsClient::create(config_file, host,
                                                        username, pw).unwrap();
         let request_payload = client.generate_join_request().unwrap();
-        io::stderr().write("send this to your friendly local secrets admin:\n".as_bytes()).unwrap();
+        io::stderr().write("Send this to your friendly local secrets admin:\n".as_bytes()).unwrap();
         io::stdout().write(request_payload.as_bytes()).unwrap();
         io::stdout().write("\n".as_bytes()).unwrap();
         exit(0);
+    }
+
+    if let ("check-server", Some(_)) = matches.subcommand() {
+        let instance = client::SecretsClient::connect(config_file, pw).unwrap();
+        instance.check_server().unwrap();
     }
 
     match matches.subcommand() {

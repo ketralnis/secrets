@@ -69,6 +69,7 @@ mod tests {
         assert_eq!(true, compare("abc", "abc"));
         assert_eq!(false, compare("abc", "ab"));
         assert_eq!(false, compare("ab", "abc"));
+        assert_eq!(false, compare("ab", "aba"));
         assert_eq!(false, compare("abd", "abc"));
     }
 }

@@ -1,12 +1,14 @@
 use std::path::{PathBuf, Path};
 use std::io;
 use std::process::exit;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::ffi::OsStrExt;
+use std::fs::File;
 
 use env_logger;
 use clap::{Arg, App, AppSettings, SubCommand};
 use sodiumoxide;
+use openssl::ssl::init as init_openssl;
 
 use password;
 use utils;
@@ -45,10 +47,17 @@ pub fn main() {
                 .takes_value(true)
                 .default_value("0.0.0.0:4430")
                 .validator(|l| utils::validate_host("listen", &l))))
+        .subcommand(SubCommand::with_name("accept-join")
+            .about("Process a join request from a user")
+            .arg(Arg::with_name("filename")
+                .index(1)
+                .takes_value(true)
+                .required(true)))
         .subcommand(SubCommand::with_name("info")
             .about("show info about the server"))
         .get_matches();
 
+    init_openssl();
     env_logger::init().unwrap();
     sodiumoxide::init();
 
@@ -69,7 +78,7 @@ pub fn main() {
             exit(1);
         }
         let cn = subargs.value_of("name").unwrap().to_string();
-        let mut instance = server::SecretsServer::create(config_file, cn, pw).unwrap();
+        let instance = server::SecretsServer::create(config_file, cn, pw).unwrap();
         let fingerprint = instance.ssl_fingerprint().unwrap();
         println!("created server with fingerprint {}", fingerprint);
         return;
@@ -93,11 +102,18 @@ pub fn main() {
             let fingerprint = instance.ssl_fingerprint().unwrap();
             println!("ssl fingerprint: {}", fingerprint);
             let cn = instance.ssl_cn().unwrap();
-            println!("ssl cn: {}", cn);
+            println!("ssl common name: {}", cn);
             let (public_key, _) = instance.get_keys().unwrap();
             println!("public key: {}", utils::hex(public_key.as_ref()));
             let (public_sign, _) = instance.get_signs().unwrap();
             println!("public sign: {}", utils::hex(public_sign.as_ref()));
+        },
+        ("accept-join", Some(subargs)) => {
+            let filename = subargs.value_of("filename").unwrap();
+            let mut payload = String::new();
+            let mut file = File::open(filename).unwrap();
+            file.read_to_string(&mut payload).unwrap();
+            instance.accept_join(payload.as_bytes()).unwrap();
         }
         _ => unreachable!()
     }
