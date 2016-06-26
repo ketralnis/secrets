@@ -31,7 +31,7 @@ impl SecretsServer {
         let mut db = try!(common::create_db(config_file));
         try!(create_server_schema(&mut db));
         let mut server = SecretsServer {db: db, password: password};
-        server.create_and_store_keys(&cn);
+        try!(server.create_and_store_keys(&cn));
 
         Ok(server)
     }

@@ -32,20 +32,21 @@ fi
 
 echo checking http health
 curl --insecure https://$(hostname):4430/api/health; echo ''
+curl --insecure https://$(hostname):4430/api/info; echo ''
 
 for new_user in dking florence; do
     echo creating user $new_user
 
     CLIENT="./target/debug/secrets-client -d ./tmp/$new_user.db -p pass:password_$new_user"
 
-    yes | $CLIENT request-join -u $new_user -h $(hostname):4430 > tmp/$new_user.request
+    yes | $CLIENT join -u $new_user -h $(hostname):4430 > tmp/$new_user.request
     cat tmp/$new_user.request
     sqlite3 tmp/client.db .dump
 
     yes | $SERVER accept-join $new_user tmp/$new_user.request > tmp/$new_user.response
     cat tmp/$new_user.response
 
-    yes | $CLIENT join $new_user tmp/$new_user.response
+    $CLIENT check-health
 done
 
 CLIENT1="./target/debug/secrets-client -d ./tmp/client-dking.db -p pass:password_dking"

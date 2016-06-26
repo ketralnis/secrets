@@ -38,7 +38,7 @@ pub fn main() {
              .default_value("prompt")
              .validator(password::validate_password_source))
         .setting(AppSettings::SubcommandRequiredElseHelp)
-        .subcommand(SubCommand::with_name("request-join")
+        .subcommand(SubCommand::with_name("join")
             .arg(Arg::with_name("username")
                 .short("u").long("username")
                 .takes_value(true)
@@ -71,16 +71,16 @@ pub fn main() {
         }
     };
 
-    // the only command that's valid if the DB doesn't exist isrequest-join
+    // the only command that's valid if the DB doesn't exist is join
     let config_exists = config_file.is_file();
-    let is_create = matches.subcommand_matches("request-join").is_some();
+    let is_create = matches.subcommand_matches("join").is_some();
     if config_exists && is_create {
         io::stderr().write(config_file.as_os_str().as_bytes()).unwrap();
         io::stderr().write(b" already exists\n").unwrap();
         exit(1);
     } else if !config_exists && !is_create {
         io::stderr().write(config_file.as_os_str().as_bytes()).unwrap();
-        io::stderr().write(b" not found. did you request-join?\n").unwrap();
+        io::stderr().write(b" not found. did you join?\n").unwrap();
         exit(1);
     }
 
@@ -89,15 +89,20 @@ pub fn main() {
     let pws = password::parse_password_source(&pwsd).unwrap();
     let pw = password::evaluate_password_source(pws).unwrap();
 
-    if let ("request-join", Some(subargs)) = matches.subcommand() {
+    if let ("join", Some(subargs)) = matches.subcommand() {
         let username = subargs.value_of("username").unwrap().to_string();
         let host = subargs.value_of("host").unwrap().to_string();
-        client::SecretsClient::create(config_file, host,
-                                      username, pw).unwrap();
+        let mut client = client::SecretsClient::create(config_file, host,
+                                                       username, pw).unwrap();
+        let request_payload = client.generate_join_request().unwrap();
+        io::stderr().write("send this to your friendly local secrets admin:\n".as_bytes()).unwrap();
+        io::stdout().write(request_payload.as_bytes()).unwrap();
+        io::stdout().write("\n".as_bytes()).unwrap();
+        exit(0);
     }
 
     match matches.subcommand() {
-        // ("request-join", Some(subargs)) => {
+        // ("join", Some(subargs)) => {
         //     let username = subargs.value_of("username").unwrap().to_string();
         //     let host = subargs.value_of("host").unwrap().to_string();
         //     create_config(config_file, username, host)

@@ -94,6 +94,10 @@ pub fn main() {
             println!("ssl fingerprint: {}", fingerprint);
             let cn = instance.ssl_cn().unwrap();
             println!("ssl cn: {}", cn);
+            let (public_key, _) = instance.get_keys().unwrap();
+            println!("public key: {}", utils::hex(public_key.as_ref()));
+            let (public_sign, _) = instance.get_signs().unwrap();
+            println!("public sign: {}", utils::hex(public_sign.as_ref()));
         }
         _ => unreachable!()
     }

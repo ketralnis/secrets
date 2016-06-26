@@ -7,6 +7,7 @@ use std::io::Read;
 use std::io::Cursor;
 
 use sodiumoxide::crypto::box_;
+use sodiumoxide::crypto::sign;
 use openssl::x509::X509;
 use openssl::crypto::pkey::PKey;
 use openssl::ssl::error::SslError;
@@ -128,6 +129,10 @@ pub trait SecretsContainer {
         try!(self.set_global("public_key", &public_key.as_ref()));
         try!(self.set_encrypted_global("private_key", &private_key[..]));
 
+        let (public_sign, private_sign) = sign::gen_keypair();
+        try!(self.set_global("public_sign", &public_sign.as_ref()));
+        try!(self.set_encrypted_global("private_sign", &private_sign[..]));
+
         let (public_pem_vec, private_pem_vec) = try!(init_ssl_cert(cn));
         try!(self.set_global("public_pem", &public_pem_vec));
         try!(self.set_encrypted_global("private_pem", &private_pem_vec));
@@ -145,6 +150,18 @@ pub trait SecretsContainer {
         let private_key = try!(private_key.ok_or(keys::CryptoError::Unknown));
 
         return Ok((public_key, private_key));
+    }
+
+    fn get_signs(&mut self) -> Result<(sign::PublicKey, sign::SecretKey), SecretsError> {
+        let public_sign_vec: Vec<u8> = try!(self.get_global("public_sign"));
+        let public_sign = sign::PublicKey::from_slice(&public_sign_vec);
+        let public_sign = try!(public_sign.ok_or(keys::CryptoError::Unknown));
+
+        let private_sign_vec: Vec<u8> = try!(self.get_encrypted_global("private_sign"));
+        let private_sign = sign::SecretKey::from_slice(&private_sign_vec);
+        let private_sign = try!(private_sign.ok_or(keys::CryptoError::Unknown));
+
+        return Ok((public_sign, private_sign));
     }
 
     fn get_pems(&mut self) -> Result<(X509, PKey), SecretsError> {
@@ -171,7 +188,7 @@ pub trait SecretsContainer {
         let (public_key, _) = try!(self.get_pems());
         let fingerprint = public_key.fingerprint(HashType::SHA256);
         let fingerprint = try!(fingerprint.ok_or(SecretsError::Unknown("stored cert has no fingerprint")));
-        let fingerprint = utils::hex(fingerprint);
+        let fingerprint = utils::hex(&fingerprint);
         return Ok(fingerprint);
     }
 

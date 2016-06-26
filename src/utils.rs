@@ -20,7 +20,7 @@ pub fn re_validator(name: &str, re_expr: &'static str, value: &str)
     }
 }
 
-pub fn hex(bytes: Vec<u8>) -> String {
+pub fn hex(bytes: &[u8]) -> String {
     let strs: Vec<String> = bytes.iter()
         .map(|b| format!("{:02x}", b))
         .collect();
@@ -44,5 +44,31 @@ pub fn prompt_yn(prompt: &str) -> io::Result<bool> {
             "N" | "n" | "no" => return Ok(false),
             _ => continue
         }
+    }
+}
+
+pub fn constant_time_compare(actual: &[u8], expected: &[u8]) -> bool {
+    let actual_len = actual.len();
+    let expected_len = expected.len();
+    let mut res = actual_len ^ expected_len;
+    for x in 0..actual_len {
+        res |= (actual[x] ^ expected[x%expected_len]) as usize;
+    }
+    return res == 0;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    pub fn test_constant_time_compare() {
+        let compare = |actual: &str, expected: &str| {
+            return constant_time_compare(&actual.as_bytes(), &expected.as_bytes())
+        };
+        assert_eq!(true, compare("abc", "abc"));
+        assert_eq!(false, compare("abc", "ab"));
+        assert_eq!(false, compare("ab", "abc"));
+        assert_eq!(false, compare("abd", "abc"));
     }
 }

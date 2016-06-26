@@ -18,23 +18,26 @@ use rusqlite;
 use serde_json::builder::ObjectBuilder;
 use serde_json::ser::to_string;
 
-use keys;
 use utils;
 use common;
-use common::init_ssl_cert;
 use common::SecretsError;
 use common::SecretsContainer;
 
 pub struct SecretsClient {
     db: rusqlite::Connection,
     password: String,
-    http_client: Option<hyper::Client>,
 }
 
 impl SecretsClient {
     pub fn create<P: AsRef<Path>>(config_file: P, host: String,
                                   username: String, password: String,
                               ) -> Result<Self, SecretsError> {
+
+        // this creates a new local database and connects to the server to get
+        // its fingerprint. Because we aren't really set up yet, we have to do a
+        // lot by hand that the normal client can just do through convenience
+        // methods
+
         // set up the SSL verifier to prompt them for the fingerprint
         let mut ssl_context = try!(SslContext::new(SslMethod::Tlsv1));
         let recorder: Rc<RefCell<Option<(String, String)>>> = Rc::new(RefCell::new(Option::None));
@@ -78,7 +81,6 @@ impl SecretsClient {
 
         let mut client = SecretsClient {
             db: db,
-            http_client: Option::None,
             password: password
         };
         try!(client.create_and_store_keys(&username));
@@ -86,31 +88,37 @@ impl SecretsClient {
         try!(client.set_global("username", &username));
         try!(client.set_global("server_host", &host));
         try!(client.set_global("server_fingerprint", &fingerprint));
-        try!(client.set_global("server_common_name", &cn));
+        try!(client.set_global("server_cn", &cn));
 
-        try!(io::stderr().write("send this to your local friendly secrets admin:".as_bytes()));
+        return Ok(client);
+    }
 
-        let client_fingerprint = try!(client.ssl_fingerprint());
-        let client_public_key = try!(client.get_global::<Vec<u8>>("public_key"));
+    pub fn generate_join_request(&mut self) -> Result<String, SecretsError> {
+        info!("creating join request");
+
+        let server_fingerprint = try!(self.get_global::<String>("server_fingerprint"));
+        let server_cn = try!(self.get_global::<String>("server_cn"));
+        let username = try!(self.username());
+        let client_fingerprint = try!(self.ssl_fingerprint());
+        let client_public_key = try!(self.get_global::<Vec<u8>>("public_key"));
+        let client_public_sign = try!(self.get_global::<Vec<u8>>("public_sign"));
 
         let requester_value = ObjectBuilder::new()
-            .insert("server_fingerprint", fingerprint)
-            .insert("server_common_name", cn)
-            .insert("client_fingerprint", client_fingerprint)
+            .insert("server_fingerprint", server_fingerprint)
+            .insert("server_common_name", server_cn)
             .insert("client_username", username)
-            .insert("client_public_key", utils::hex(client_public_key))
+            .insert("client_fingerprint", client_fingerprint)
+            .insert("client_public_key", utils::hex(&client_public_key))
+            .insert("client_public_sign", utils::hex(&client_public_sign))
             .unwrap();
-        let key_sig =
+        // let key_sig =
         let js = try!(to_string(&requester_value));
-        println!("{}", js);
-
-        Err(SecretsError::NotImplemented("I said so"))
-        // return Ok(SecretsClient {})
+        return Ok(js);
     }
 
-    fn key_sig(value: serde_json::Value) {
-
-    }
+    // fn key_sig(value: serde_json::Value) {
+    //
+    // }
 
     fn check_server_health(http: &hyper::Client, host: &String) -> Result<(), SecretsError> {
         let response = try!(http.get(&path(&host, "/api/health")).send());
@@ -121,9 +129,34 @@ impl SecretsClient {
         }
     }
 
+    fn server_get(&mut self, endpoint: &str) -> Result<(), SecretsError> {
+        // set up the SSL verifier to check the fingerprint
+        let mut ssl_context = try!(SslContext::new(SslMethod::Tlsv1));
+        let server_fingerprint = try!(self.get_global::<String>("server_fingerprint"));
+        ssl_context.set_verify_with_data(
+            SSL_VERIFY_PEER,
+            verify_fingerprint,
+            server_fingerprint);
+        let ssl = Openssl {context: Arc::new(ssl_context)};
+        let connector = HttpsConnector::new(ssl);
+        let http = hyper::Client::with_connector(connector);
+
+        let host = try!(self.get_global::<String>("server_host"));
+        let url = format!("{}/{}", host, endpoint);
+        let http_client = hyper::Client::new();
+        let response = http_client.get(&url);
+
+        return Ok(());
+    }
+
     pub fn connect<P: AsRef<Path>>(path: P) -> Result<Self, SecretsError> {
         return Err(SecretsError::NotImplemented("I said so"))
         // return Ok(SecretsClient {})
+    }
+
+    fn username(&mut self) -> Result<String, SecretsError> {
+        let username = try!(self.get_global::<String>("username"));
+        return Ok(username);
     }
 }
 
@@ -151,7 +184,7 @@ pub fn verify_record(_preverify_ok: bool, x509_ctx: &X509StoreContext, data: &Rc
         return false
     }
     let fingerprint = fingerprint.unwrap();
-    let fingerprint = utils::hex(fingerprint);
+    let fingerprint = utils::hex(&fingerprint);
 
     let cn = pem.subject_name().text_by_nid(Nid::CN);
     if cn.is_none() {
@@ -176,6 +209,29 @@ pub fn verify_record(_preverify_ok: bool, x509_ctx: &X509StoreContext, data: &Rc
     *data.borrow_mut() = Some((cn, fingerprint));
     return true;
 }
+
+/// SSL verifier callback function that accepts any certificate, but records the
+/// cn/fingerprint
+pub fn verify_fingerprint(_preverify_ok: bool, x509_ctx: &X509StoreContext, expected_fingerprint: &String) -> bool {
+    let pem = x509_ctx.get_current_cert();
+    if pem.is_none() {
+        error!("remote provided no cert");
+        return false;
+    }
+    let pem = pem.unwrap();
+
+    let remote_fingerprint = pem.fingerprint(HashType::SHA256);
+    if remote_fingerprint.is_none() {
+        error!("remote had no fingerprint");
+        return false
+    }
+    let remote_fingerprint = remote_fingerprint.unwrap();
+    let remote_fingerprint = utils::hex(&remote_fingerprint);
+
+    return utils::constant_time_compare(&remote_fingerprint.as_bytes(),
+                                        &expected_fingerprint.as_bytes());
+}
+
 
 impl SecretsContainer for SecretsClient {
     fn get_db(&mut self) -> &mut rusqlite::Connection {
