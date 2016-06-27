@@ -210,14 +210,8 @@ pub trait SecretsContainer {
                                                  &auth_tag,
                                                  &password.as_bytes())
         };
-        let authed = try!(authed);
-        // let authed = try!(authed);
-
-        if authed {
-            Ok(value)
-        } else {
-            Err(SecretsError::Crypto(keys::CryptoError::CantDecrypt))
-        }
+        try!(authed);
+        return Ok(value)
     }
 
     fn set_global<'a, T: ToSql+Authable>(&mut self, key_name: &str, value: &'a T) -> Result<(), SecretsError> {

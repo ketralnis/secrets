@@ -5,10 +5,11 @@ set -ev
 rm -fr ./tmp
 mkdir tmp
 
+export RUST_BACKTRACE=1
+
 cargo test # in test mode
 cargo build # in dev mode
 
-export RUST_BACKTRACE=1
 export RUST_LOG=debug
 
 SERVER="./target/debug/secrets-server -d ./tmp/server.db"

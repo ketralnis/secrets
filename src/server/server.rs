@@ -2,12 +2,14 @@ use std::path::Path;
 use std::io;
 use std::io::Write;
 
+use sodiumoxide::crypto::box_;
+use sodiumoxide::crypto::sign;
 use rusqlite;
-use rusqlite::Error as RusqliteError;
 use rustc_serialize::base64::FromBase64;
 use serde_json::Value as JsonValue;
 use serde_json::from_slice as json_from_slice;
 
+use keys;
 use utils;
 use common::SecretsError;
 use common::SecretsContainer;
@@ -95,54 +97,88 @@ impl SecretsServer {
             return Err(SecretsError::Authentication("refused client authenticator"));
         }
 
+        let client_public_key = try!(
+            utils::unhex(&client_public_key)
+            .ok_or(keys::CryptoError::CantDecrypt));
+        let client_public_key = try!(
+            box_::PublicKey::from_slice(&client_public_key)
+            .ok_or(keys::CryptoError::CantDecrypt));
+        let client_public_sign = try!(
+            utils::unhex(&client_public_sign)
+            .ok_or(keys::CryptoError::CantDecrypt));
+        let client_public_sign = try!(
+            sign::PublicKey::from_slice(&client_public_sign)
+            .ok_or(keys::CryptoError::CantDecrypt));
+
         let user = try!(self.create_user(client_username, client_fingerprint,
                                          client_public_key, client_public_sign));
         info!("created user: {}", user.username);
         return Ok(user);
     }
 
-    fn create_user(&self, username: String, fingerprint: String, public_key: String, public_sign: String) -> Result<User, SecretsError> {
+    fn create_user(&self, username: String, ssl_fingerprint: String, public_key: box_::PublicKey, public_sign: sign::PublicKey) -> Result<User, SecretsError> {
         let db = self.get_db();
+        let auth_tag = try!(keys::auth_items_with_password(&[&username.as_bytes(),
+                                                             &ssl_fingerprint.as_bytes(),
+                                                             &public_key.as_ref(),
+                                                             &public_sign.as_ref()],
+                                                           &self.password.as_bytes()));
         try!(db.execute("
-                INSERT INTO users(username, ssl_fingerprint, public_key, public_sign)
-                VALUES(?,?,?,?)
+                INSERT INTO users(username, ssl_fingerprint,
+                                  public_key, public_sign,
+                                  auth_tag)
+                VALUES(?,?,?,?,?)
             ",
-            &[&username, &fingerprint, &public_key, &public_sign]));
-        let user = try!(self.authenticate(username, fingerprint));
+            &[&username, &ssl_fingerprint,
+              &public_key.as_ref(), &public_sign.as_ref(),
+              &auth_tag]));
+        let user = try!(self.get_user(&username));
         return Ok(user);
+    }
+
+    fn get_user(&self, username: &String) -> Result<User, SecretsError> {
+        let ret = try!(self.get_db().query_row("
+                SELECT ssl_fingerprint, public_key, public_sign, auth_tag
+                FROM users
+                WHERE username=?
+            ",
+            &[username],
+            |row| { (row.get(0), row.get(1), row.get(2), row.get(3)) }));
+        let (ssl_fingerprint, public_key, public_sign, auth_tag):
+            (String,Vec<u8>,Vec<u8>,Vec<u8>) = ret;
+        try!(keys::check_auth_items_with_password(&[&username.as_bytes(),
+                                                    &ssl_fingerprint.as_bytes(),
+                                                    &public_key,
+                                                    &public_sign],
+                                                  &auth_tag,
+                                                  &self.password.as_bytes()));
+        let public_key = try!(box_::PublicKey::from_slice(&public_key)
+                            .ok_or(keys::CryptoError::CantDecrypt));
+        let public_sign = try!(sign::PublicKey::from_slice(&public_sign)
+                            .ok_or(keys::CryptoError::CantDecrypt));
+        return Ok(User {
+            username: username.to_owned(),
+            ssl_fingerprint: ssl_fingerprint,
+            public_key: public_key,
+            public_sign: public_sign,
+        });
     }
 
     fn user_exists(&self, username: &String) -> Result<bool, SecretsError> {
-        let ret = self.get_db().query_row(
-            "SELECT username FROM users WHERE username=?",
-            &[username],
-            |_row| { true });
-        match ret {
-            Ok(true) => Ok(true),
-            Ok(_) => Err(SecretsError::Unknown("whastis?")),
-            Err(RusqliteError::QueryReturnedNoRows) => Ok(false),
-            Err(err) => Err(SecretsError::Sqlite(err)),
+        match self.get_user(username) {
+            Ok(_) => Ok(true),
+            Err(SecretsError::Sqlite(rusqlite::Error::QueryReturnedNoRows)) => Ok(false),
+            Err(x) => Err(x)
         }
     }
 
-    pub fn authenticate(&self, username: String, ssl_fingerprint: String) -> Result<User, SecretsError> {
-        let db = self.get_db();
-        let row = db.query_row("
-            SELECT username
-            FROM users
-            WHERE username = ?
-            AND ssl_fingerprint = ?
-        ", &[&username, &ssl_fingerprint],
-        |row| {
-            User {username: row.get(0)}
-        });
-        let user = try!(row.map_err(|err| {
-            match err {
-                RusqliteError::QueryReturnedNoRows => SecretsError::Authentication("no match"),
-                _ => SecretsError::Sqlite(err)
-            }
-        }));
-        return Ok(user);
+    pub fn authenticate(&self, username: &String, ssl_fingerprint: &String) -> Result<User, SecretsError> {
+        let user = try!(self.get_user(username));
+        if utils::constant_time_compare(&user.ssl_fingerprint.as_bytes(), &ssl_fingerprint.as_bytes()) {
+            return Ok(user)
+        } else {
+            return Err(SecretsError::Authentication("bad fingerprint match"))
+        }
     }
 }
 
@@ -158,6 +194,9 @@ impl SecretsContainer for SecretsServer {
 
 pub struct User {
     username: String,
+    ssl_fingerprint: String,
+    public_key: box_::PublicKey,
+    public_sign: sign::PublicKey,
 }
 
 fn create_server_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error> {
@@ -200,6 +239,8 @@ fn create_server_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite:
 mod tests {
     use super::*;
 
+    use sodiumoxide::crypto::box_;
+    use sodiumoxide::crypto::sign;
     use tempdir;
 
     #[test]
@@ -216,5 +257,13 @@ mod tests {
 
         debug!("Connecting");
         let server = SecretsServer::connect(tempfile, password.to_string()).unwrap();
+
+        debug!("Creating user");
+        let (public_key, private_key) = box_::gen_keypair();
+        let (public_sign, private_sign) = sign::gen_keypair();
+        let user = server.create_user("username".to_string(),
+                                      "client_fingerprint".to_string(),
+                                      public_key,
+                                      public_sign).unwrap();
     }
 }

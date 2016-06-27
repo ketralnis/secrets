@@ -120,7 +120,7 @@ pub fn auth_items_with_password(items: &[&[u8]], password: &[u8]) -> Result<Vec<
     return Ok(ret);
 }
 
-pub fn check_auth_items_with_password(items: &[&[u8]], expected_tag: &[u8], password: &[u8]) -> Result<bool, CryptoError> {
+pub fn check_auth_items_with_password(items: &[&[u8]], expected_tag: &[u8], password: &[u8]) -> Result<(), CryptoError> {
     let blob = items.join(&b',');
 
     let mut rdr = io::Cursor::new(expected_tag);
@@ -137,7 +137,13 @@ pub fn check_auth_items_with_password(items: &[&[u8]], expected_tag: &[u8], pass
     try!(rdr.read_to_end(&mut tag_bytes));
     let tag = try!(auth::Tag::from_slice(&tag_bytes).ok_or(CryptoError::CantDecrypt));
 
-    return Ok(auth::verify(&tag, &blob, &key));
+    let authed = auth::verify(&tag, &blob, &key);
+
+    if authed {
+        return Ok(())
+    } else {
+        return Err(CryptoError::CantDecrypt)
+    }
 }
 
 
@@ -170,15 +176,15 @@ mod tests {
         let items = &[&b"bob"[..], &b"george"[..], &b"anthony"[..]];
         let good_password = b"correct horse battery staple";
         let sig = auth_items_with_password(items, good_password).unwrap();
-        let verified = check_auth_items_with_password(items, &sig[..], good_password).unwrap();
-        assert_eq!(true, verified);
+        let verified = check_auth_items_with_password(items, &sig[..], good_password);
+        assert_eq!(true, verified.is_ok());
 
         let bad_password = b"incorrect duck assault stapler";
-        let verified = check_auth_items_with_password(items, &sig[..], bad_password).unwrap();
-        assert_eq!(false, verified);
+        let verified = check_auth_items_with_password(items, &sig[..], bad_password);
+        assert_eq!(true, verified.is_err());
 
         let bad_items = &[&b"robert"[..], &b"georgia"[..], &b"tony"[..]];
-        let verified = check_auth_items_with_password(bad_items, &sig[..], good_password).unwrap();
-        assert_eq!(false, verified);
+        let verified = check_auth_items_with_password(bad_items, &sig[..], good_password);
+        assert_eq!(true, verified.is_err());
     }
 }

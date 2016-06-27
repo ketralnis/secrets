@@ -159,7 +159,7 @@ fn authenticate_request(instance: &SecretsServer, request: &Request) -> Result<U
         }
     };
 
-    let user = try!(instance.authenticate(remote_cn, remote_fingerprint));
+    let user = try!(instance.authenticate(&remote_cn, &remote_fingerprint));
     return Ok(user);
 }
 
