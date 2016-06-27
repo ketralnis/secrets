@@ -69,7 +69,7 @@ pub fn create_db<P: AsRef<Path>>(config_file: P)
 
 pub fn connect_db<P: AsRef<Path>>(config_file: P)
                                   -> Result<rusqlite::Connection, SecretsError> {
-    let mut conn = try!(_connect_db(config_file, false));
+    let conn = try!(_connect_db(config_file, false));
     try!(check_db(&conn));
     return Ok(conn);
 }
@@ -112,7 +112,8 @@ fn create_common_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite:
         CREATE TABLE globals (
             key PRIMARY KEY NOT NULL,
             value NOT NULL,
-            encrypted BOOL NOT NULL
+            encrypted BOOL NOT NULL,
+            auth_tag -- not present for encrypted items
         );
     ")
 }
@@ -128,7 +129,7 @@ pub trait SecretsContainer {
     }
 
     fn create_and_store_keys(&mut self, cn: &str) -> Result<(), SecretsError> {
-        let (public_key, private_key) = keys::create_keypair();
+        let (public_key, private_key) = box_::gen_keypair();
         try!(self.set_global("public_key", &public_key.as_ref()));
         try!(self.set_encrypted_global("private_key", &private_key[..]));
 
@@ -195,20 +196,41 @@ pub trait SecretsContainer {
         return Ok(fingerprint);
     }
 
-    fn get_global<T: FromSql>(&self, key_name: &str) -> Result<T, SecretsError> {
+    fn get_global<'a, T: FromSql+Authable>(&self, key_name: &str) -> Result<T, SecretsError> {
         let conn = self.get_db();
-        let value = try!(conn.query_row(
-            "SELECT value FROM globals WHERE key = ? AND NOT encrypted",
+        let found: (T, Vec<u8>) = try!(conn.query_row(
+            "SELECT value, auth_tag FROM globals WHERE key = ? AND NOT encrypted",
             &[&key_name],
-            |row| { row.get(0) }));
-        Ok(value)
+            |row| { (row.get(0), row.get(1)) }));
+        let (value, auth_tag) = found;
+        let authed = {
+            let auth_buff = value.to_buffer();
+            let password = self.get_password();
+            keys::check_auth_items_with_password(&[key_name.as_bytes(), &auth_buff],
+                                                 &auth_tag,
+                                                 &password.as_bytes())
+        };
+        let authed = try!(authed);
+        // let authed = try!(authed);
+
+        if authed {
+            Ok(value)
+        } else {
+            Err(SecretsError::Crypto(keys::CryptoError::CantDecrypt))
+        }
     }
 
-    fn set_global<T: ToSql>(&mut self, key_name: &str, value: &T) -> Result<(), SecretsError> {
+    fn set_global<'a, T: ToSql+Authable>(&mut self, key_name: &str, value: &'a T) -> Result<(), SecretsError> {
         let conn = self.get_db();
-        try!(conn.execute(
-            "INSERT OR REPLACE INTO globals(key, value, encrypted) VALUES(?, ?, 0)",
-            &[&key_name, value]));
+        let auth_buff = value.to_buffer();
+        let password = self.get_password();
+        let auth_tag = keys::auth_items_with_password(&[key_name.as_bytes(), &auth_buff],
+                                                      &password.as_bytes());
+        let auth_tag = try!(auth_tag);
+        try!(conn.execute("
+            INSERT OR REPLACE INTO globals(key, value, encrypted, auth_tag)
+            VALUES(?, ?, 0, ?)",
+            &[&key_name, value, &auth_tag]));
         Ok(())
     }
 
@@ -260,5 +282,28 @@ pub fn json_get_string(value: &JsonValue, name: &str) -> Result<String, SecretsE
                                     name);
             Err(SecretsError::ServerResponseError(error_msg))
         }
+    }
+}
+
+/// Trait for things that we can build authentication tokens out of
+pub trait Authable {
+    fn to_buffer(&self) -> &[u8];
+}
+
+impl Authable for String {
+    fn to_buffer<'a>(&'a self) -> &'a [u8] {
+        &self.as_bytes()
+    }
+}
+
+impl<'a> Authable for &'a [u8] {
+    fn to_buffer<'b>(&'b self) -> &'b [u8] {
+        self
+    }
+}
+
+impl Authable for Vec<u8> {
+    fn to_buffer<'a>(&'a self) -> &'a [u8] {
+        &self
     }
 }

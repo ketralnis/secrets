@@ -1,25 +1,16 @@
 use std::path::Path;
 use std::io;
 use std::io::Write;
-use std::io::Read;
-use std::io::Cursor;
 
 use rusqlite;
 use rusqlite::Error as RusqliteError;
-use rusqlite::types::ToSql;
-use rusqlite::types::FromSql;
-use sodiumoxide::crypto::box_;
-use openssl::ssl::error::SslError;
-use openssl::crypto::hash::Type as HashType;
 use rustc_serialize::base64::FromBase64;
 use serde_json::Value as JsonValue;
 use serde_json::from_slice as json_from_slice;
 
-use keys;
 use utils;
 use common::SecretsError;
 use common::SecretsContainer;
-use common::init_ssl_cert;
 use common;
 
 pub struct SecretsServer {
@@ -178,14 +169,16 @@ fn create_server_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite:
             public_key NOT NULL,
             public_sign NOT NULL,
             ssl_fingerprint NOT NULL,
-            disabled INTEGER NULL DEFAULT NULL
+            disabled INTEGER NULL DEFAULT NULL,
+            auth_tag NOT NULL
         );
         CREATE TABLE services (
             service_name PRIMARY KEY NOT NULL,
             created INTEGER DEFAULT (CAST(STRFTIME('%s','now') AS INT)),
             modified INTEGER DEFAULT (CAST(STRFTIME('%s','now') AS INT)),
             creator REFERENCES users(username),
-            last_set_by REFERENCES users(username)
+            last_set_by REFERENCES users(username),
+            auth_tag NOT NULL
         );
         CREATE TABLE authorizations (
             username REFERENCES users(username),
@@ -195,6 +188,7 @@ fn create_server_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite:
             grantor REFERENCES users(username), -- who initially gave them permission
             last_set_by REFERENCES users(username),
             ciphertext, -- encrypted to username's public key
+            auth_tag NOT NULL,
             PRIMARY KEY(username, service_name)
         );
     "));
@@ -221,6 +215,6 @@ mod tests {
         drop(created);
 
         debug!("Connecting");
-        let mut server = SecretsServer::connect(tempfile, password.to_string()).unwrap();
+        let server = SecretsServer::connect(tempfile, password.to_string()).unwrap();
     }
 }

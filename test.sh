@@ -37,7 +37,7 @@ curl --insecure https://$(hostname):4430/api/info; echo ''
 for new_user in dking florence; do
     echo creating user $new_user
 
-    CLIENT="./target/debug/secrets-client -d ./tmp/$new_user.db -p pass:password_$new_user"
+    CLIENT="./target/debug/secrets-client -d ./tmp/client-$new_user.db -p pass:password_$new_user"
 
     yes | $CLIENT join -u $new_user -h $(hostname):4430 > tmp/$new_user.request
     cat tmp/$new_user.request
@@ -60,7 +60,15 @@ CLIENT1="./target/debug/secrets-client -d ./tmp/client-dking.db -p pass:password
 CLIENT2="./target/debug/secrets-client -d ./tmp/client-florence.db -p pass:password_florence"
 
 $CLIENT1 create twitter pass:twitterpass
+$CLIENT1 info twitter
 $CLIENT1 authorize twitter florence
+$CLIENT1 info twitter
+
+$CLIENT1 list --mine | grep twitter
+! $CLIENT2 list --mine | grep twitter
+
+$CLIENT1 list --all | grep twitter
+$CLIENT2 list --all | grep twitter
 
 $CLIENT2 get twitter | grep twitterpass
 

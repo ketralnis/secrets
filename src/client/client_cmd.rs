@@ -107,6 +107,7 @@ pub fn main() {
     if let ("check-server", Some(_)) = matches.subcommand() {
         let instance = client::SecretsClient::connect(config_file, pw).unwrap();
         instance.check_server().unwrap();
+        exit(0);
     }
 
     match matches.subcommand() {
