@@ -169,7 +169,13 @@ impl SecretsServer {
     }
 
     pub fn authenticate(&self, username: &String, ssl_fingerprint: &String) -> Result<User, SecretsError> {
-        let user = try!(self.get_user(username));
+        let user = match self.get_user(username) {
+            Ok(user) => user,
+            Err(SecretsError::Sqlite(rusqlite::Error::QueryReturnedNoRows)) => {
+                return Err(SecretsError::Authentication("no user"))
+            },
+            Err(x) => return Err(x),
+        };
         if utils::constant_time_compare(&user.ssl_fingerprint.as_bytes(), &ssl_fingerprint.as_bytes()) {
             return Ok(user)
         } else {
