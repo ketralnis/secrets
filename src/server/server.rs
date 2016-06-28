@@ -99,15 +99,11 @@ impl SecretsServer {
 
         let client_public_key = try!(
             utils::unhex(&client_public_key)
-            .ok_or(keys::CryptoError::CantDecrypt));
-        let client_public_key = try!(
-            box_::PublicKey::from_slice(&client_public_key)
+            .and_then(|x| box_::PublicKey::from_slice(&x))
             .ok_or(keys::CryptoError::CantDecrypt));
         let client_public_sign = try!(
             utils::unhex(&client_public_sign)
-            .ok_or(keys::CryptoError::CantDecrypt));
-        let client_public_sign = try!(
-            sign::PublicKey::from_slice(&client_public_sign)
+            .and_then(|x| sign::PublicKey::from_slice(&x))
             .ok_or(keys::CryptoError::CantDecrypt));
 
         let user = try!(self.create_user(client_username, client_fingerprint,
