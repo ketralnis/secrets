@@ -112,7 +112,10 @@ impl SecretsServer {
         return Ok(user);
     }
 
-    fn create_user(&self, username: String, ssl_fingerprint: String, public_key: box_::PublicKey, public_sign: sign::PublicKey) -> Result<User, SecretsError> {
+    fn create_user(&self, username: String,
+                   ssl_fingerprint: String,
+                   public_key: box_::PublicKey,
+                   public_sign: sign::PublicKey) -> Result<User, SecretsError> {
         let db = self.get_db();
         let auth_tag = try!(keys::auth_items_with_password(&[&username.as_bytes(),
                                                              &ssl_fingerprint.as_bytes(),
@@ -176,11 +179,23 @@ impl SecretsServer {
             },
             Err(x) => return Err(x),
         };
-        if utils::constant_time_compare(&user.ssl_fingerprint.as_bytes(), &ssl_fingerprint.as_bytes()) {
+        if utils::constant_time_compare(&user.ssl_fingerprint.as_bytes(),
+                                        &ssl_fingerprint.as_bytes()) {
             return Ok(user)
         } else {
             return Err(SecretsError::Authentication("bad fingerprint match"))
         }
+    }
+
+    pub fn get_service(&self, service_name: &String) {
+
+    }
+
+    pub fn create_service(&mut self, user: &User,
+                          ciphertext: String,
+                          recipients: &[&User]) -> Result<Service, SecretsError> {
+        let trans = self.db.transaction();
+        return Err(SecretsError::NotImplemented("create_service"));
     }
 }
 
@@ -199,6 +214,16 @@ pub struct User {
     ssl_fingerprint: String,
     public_key: box_::PublicKey,
     public_sign: sign::PublicKey,
+}
+
+pub struct Service {
+    service_name: String,
+}
+
+pub struct Authorization {
+    username: String,
+    service_name: String,
+    ciphertext: String,
 }
 
 fn create_server_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error> {
@@ -246,7 +271,7 @@ mod tests {
     use tempdir;
 
     #[test]
-    pub fn test_simple_create() {
+    pub fn test_server() {
         let dir = tempdir::TempDir::new("server.rs").unwrap();
         let password =  "hello".to_string();
         let cn = "me.local".to_string();
@@ -258,14 +283,28 @@ mod tests {
         drop(created);
 
         debug!("Connecting");
-        let server = SecretsServer::connect(tempfile, password.to_string()).unwrap();
+        let mut server = SecretsServer::connect(tempfile, password.to_string()).unwrap();
 
-        debug!("Creating user");
-        let (public_key, private_key) = box_::gen_keypair();
-        let (public_sign, private_sign) = sign::gen_keypair();
-        let user = server.create_user("username".to_string(),
-                                      "client_fingerprint".to_string(),
-                                      public_key,
-                                      public_sign).unwrap();
+        debug!("Creating users");
+        let (d_public_key, d_private_key) = box_::gen_keypair();
+        let (d_public_sign, d_private_sign) = sign::gen_keypair();
+        let david = server.create_user("david".to_string(),
+                                       "david_fingerprint".to_string(),
+                                       d_public_key,
+                                       d_public_sign).unwrap();
+        let authenticated = server.authenticate(&"david".to_string(),
+                                                &"david_fingerprint".to_string()).unwrap();
+        assert_eq!(david.username, authenticated.username);
+
+        let (f_public_key, private_key) = box_::gen_keypair();
+        let (f_public_sign, private_sign) = sign::gen_keypair();
+        let florence = server.create_user("florence".to_string(),
+                                          "florence_fingerprint".to_string(),
+                                          f_public_key,
+                                          f_public_sign).unwrap();
+
+        server.create_service(&david,
+                              "ciphertext".to_string(),
+                              &[&florence]).unwrap();
     }
 }

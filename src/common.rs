@@ -36,7 +36,7 @@ quick_error! {
         Io(err: io::Error) {from()}
         Json(err: SerdeError) {from()}
         ServerError(err: String) {} // client had a problem communicating with server
-        ServerResponseError(err: String) {} // client didn't like something the server did
+        ServerResponseError(err: String) {} // client didn't like something the server sent
         Authentication(err: &'static str) {}
         Unknown(err: &'static str) {}
 
