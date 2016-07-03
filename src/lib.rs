@@ -12,6 +12,7 @@ extern crate serde_json;
 extern crate byteorder;
 #[cfg(test)] extern crate tempdir;
 extern crate rustc_serialize;
+extern crate time;
 
 mod utils;
 mod keys;

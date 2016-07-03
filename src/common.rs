@@ -25,6 +25,7 @@ use serde_json::Value as JsonValue;
 
 use utils;
 use keys;
+use keys::Authable;
 
 quick_error! {
     #[derive(Debug)]
@@ -113,6 +114,7 @@ fn create_common_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite:
             key PRIMARY KEY NOT NULL,
             value NOT NULL,
             encrypted BOOL NOT NULL,
+            modified INT NOT NULL,
             auth_tag -- not present for encrypted items
         );
     ")
@@ -196,17 +198,19 @@ pub trait SecretsContainer {
         return Ok(fingerprint);
     }
 
-    fn get_global<'a, T: FromSql+Authable>(&self, key_name: &str) -> Result<T, SecretsError> {
+    fn get_global<T: FromSql+Authable>(&self, key_name: &str) -> Result<T, SecretsError> {
         let conn = self.get_db();
-        let found: (T, Vec<u8>) = try!(conn.query_row(
+        let found: (String, T, Vec<u8>) = try!(conn.query_row(
             "SELECT value, auth_tag FROM globals WHERE key = ? AND NOT encrypted",
             &[&key_name],
-            |row| { (row.get(0), row.get(1)) }));
-        let (value, auth_tag) = found;
+            |row| (row.get(0),row.get(1),row.get(2))));
+        let (key_name, value, auth_tag): (String, T, Vec<u8>) = found;
         let authed = {
-            let auth_buff = value.to_buffer();
+            let authable: &[&Authable] = &[
+                &key_name, &value
+            ];
             let password = self.get_password();
-            keys::check_auth_items_with_password(&[key_name.as_bytes(), &auth_buff],
+            keys::check_auth_items_with_password(&authable,
                                                  &auth_tag,
                                                  &password.as_bytes())
         };
@@ -216,9 +220,11 @@ pub trait SecretsContainer {
 
     fn set_global<'a, T: ToSql+Authable>(&mut self, key_name: &str, value: &'a T) -> Result<(), SecretsError> {
         let conn = self.get_db();
-        let auth_buff = value.to_buffer();
         let password = self.get_password();
-        let auth_tag = keys::auth_items_with_password(&[key_name.as_bytes(), &auth_buff],
+        let authable: &[&Authable] = &[
+            &key_name, value,
+        ];
+        let auth_tag = keys::auth_items_with_password(&authable,
                                                       &password.as_bytes());
         let auth_tag = try!(auth_tag);
         try!(conn.execute("
@@ -257,7 +263,6 @@ pub trait SecretsContainer {
     }
 }
 
-
 pub fn json_get_string(value: &JsonValue, name: &str) -> Result<String, SecretsError> {
     if !value.is_object() {
         return Err(SecretsError::ServerResponseError("is not an object".to_string()));
@@ -276,28 +281,5 @@ pub fn json_get_string(value: &JsonValue, name: &str) -> Result<String, SecretsE
                                     name);
             Err(SecretsError::ServerResponseError(error_msg))
         }
-    }
-}
-
-/// Trait for things that we can build authentication tokens out of
-pub trait Authable {
-    fn to_buffer(&self) -> &[u8];
-}
-
-impl Authable for String {
-    fn to_buffer<'a>(&'a self) -> &'a [u8] {
-        &self.as_bytes()
-    }
-}
-
-impl<'a> Authable for &'a [u8] {
-    fn to_buffer<'b>(&'b self) -> &'b [u8] {
-        self
-    }
-}
-
-impl Authable for Vec<u8> {
-    fn to_buffer<'a>(&'a self) -> &'a [u8] {
-        &self
     }
 }

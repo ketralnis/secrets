@@ -71,6 +71,14 @@ $CLIENT1 list --mine | grep twitter
 $CLIENT1 list --all | grep twitter
 $CLIENT2 list --all | grep twitter
 
+$CLIENT1 info twitter | grep florence
+$CLIENT1 info twitter | grep dking
+
+$CLIENT1 user-info florence | grep twitter
+$CLIENT1 user-info dking | grep twitter
+
+EDITOR=/bin/true $CLIENT1 edit twitter
+
 $CLIENT2 get twitter | grep twitterpass
 
 ! $SERVER fire florence

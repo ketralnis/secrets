@@ -3,6 +3,7 @@ use std::io::{Read, Write};
 
 use sodiumoxide::crypto::auth;
 use sodiumoxide::crypto::box_;
+use sodiumoxide::crypto::sign;
 use sodiumoxide::crypto::secretbox;
 use sodiumoxide::crypto::pwhash;
 use byteorder::{NetworkEndian, WriteBytesExt, ReadBytesExt};
@@ -102,7 +103,7 @@ pub fn decrypt_blob_with_password(blob: &[u8], password: &[u8]) -> Result<Vec<u8
     return Ok(plaintext);
 }
 
-pub fn auth_items_with_password(items: &[&[u8]], password: &[u8]) -> Result<Vec<u8>, CryptoError> {
+pub fn auth_items_with_password(items: &Authable, password: &[u8]) -> Result<Vec<u8>, CryptoError> {
     let salt = pwhash::gen_salt();
     let key = try!(derive_auth_from_password(password, salt));
 
@@ -112,7 +113,7 @@ pub fn auth_items_with_password(items: &[&[u8]], password: &[u8]) -> Result<Vec<
     try!(ret.write_u64::<NetworkEndian>(1));
     ret.extend_from_slice(&salt[..]);
 
-    let blob = items.join(&b',');
+    let blob = items.to_authable();
     let tag = auth::authenticate(&blob, &key);
 
     ret.extend_from_slice(&tag[..]);
@@ -120,8 +121,9 @@ pub fn auth_items_with_password(items: &[&[u8]], password: &[u8]) -> Result<Vec<
     return Ok(ret);
 }
 
-pub fn check_auth_items_with_password(items: &[&[u8]], expected_tag: &[u8], password: &[u8]) -> Result<(), CryptoError> {
-    let blob = items.join(&b',');
+pub fn check_auth_items_with_password(items: &Authable, expected_tag: &[u8],
+                                      password: &[u8]) -> Result<(), CryptoError> {
+    let blob = items.to_authable();
 
     let mut rdr = io::Cursor::new(expected_tag);
 
@@ -146,6 +148,78 @@ pub fn check_auth_items_with_password(items: &[&[u8]], expected_tag: &[u8], pass
     }
 }
 
+/// Trait for things that we can build authentication tokens out of
+pub trait Authable {
+    fn to_authable(&self) -> &[u8];
+}
+
+impl<'a, 'c> Authable for &'a [&'c Authable] {
+    fn to_authable<'b>(&self) -> &'b [u8] {
+        if self.len() == 1 {
+            return self[0].to_authable()
+        } else {
+            let mapped = self.iter().map(|v| v.to_authable());
+            let collected: Vec<&[u8]> = mapped.collect();
+            let joined = collected.join(&b',');
+            return &joined
+        }
+    }
+
+}
+
+impl Authable for String {
+    fn to_authable<'a>(&'a self) -> &'a [u8] {
+        &self.as_bytes()
+    }
+}
+
+impl Authable for i64 {
+    fn to_authable<'a>(&'a self) -> &'a [u8] {
+        let s = format!("{}", self);
+        return &s.as_bytes()
+    }
+}
+
+impl Authable for Option<i64> {
+    fn to_authable<'a>(&'a self) -> &'a [u8] {
+        // let s = format!("{}", self);
+        let s = match *self {
+            Some(x) => format!("Some({})", x),
+            None => "None".to_string(),
+        };
+        &s.as_bytes()
+    }
+}
+
+impl<'a> Authable for &'a [u8] {
+    fn to_authable<'b>(&'b self) -> &'b [u8] {
+        self
+    }
+}
+
+impl Authable for Vec<u8> {
+    fn to_authable<'a>(&'a self) -> &'a [u8] {
+        &self
+    }
+}
+
+impl<'a> Authable for &'a str {
+    fn to_authable<'b>(&'b self) -> &'b [u8] {
+        &self.as_bytes()
+    }
+}
+
+impl Authable for box_::PublicKey {
+    fn to_authable<'a>(&'a self) -> &'a [u8] {
+        &self.as_ref()
+    }
+}
+
+impl Authable for sign::PublicKey {
+    fn to_authable<'a>(&'a self) -> &'a [u8] {
+        &self.as_ref()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -173,18 +247,18 @@ mod tests {
 
     #[test]
     pub fn test_auth_items() {
-        let items = &[&b"bob"[..], &b"george"[..], &b"anthony"[..]];
+        let items: &[&Authable] = &[&"bob", &"george", &"anthony"];
         let good_password = b"correct horse battery staple";
-        let sig = auth_items_with_password(items, good_password).unwrap();
-        let verified = check_auth_items_with_password(items, &sig[..], good_password);
+        let sig = auth_items_with_password(&items, good_password).unwrap();
+        let verified = check_auth_items_with_password(&items, &sig[..], good_password);
         assert_eq!(true, verified.is_ok());
 
         let bad_password = b"incorrect duck assault stapler";
-        let verified = check_auth_items_with_password(items, &sig[..], bad_password);
+        let verified = check_auth_items_with_password(&items, &sig[..], bad_password);
         assert_eq!(true, verified.is_err());
 
-        let bad_items = &[&b"robert"[..], &b"georgia"[..], &b"tony"[..]];
-        let verified = check_auth_items_with_password(bad_items, &sig[..], good_password);
+        let bad_items: &[&Authable] = &[&"robert", &"georgia", &"tony"];
+        let verified = check_auth_items_with_password(&bad_items, &sig[..], good_password);
         assert_eq!(true, verified.is_err());
     }
 }
