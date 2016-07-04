@@ -22,6 +22,7 @@ use hyper;
 use rusqlite;
 use serde_json::Error as SerdeError;
 use serde_json::Value as JsonValue;
+use time;
 
 use utils;
 use keys;
@@ -114,8 +115,7 @@ fn create_common_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite:
             key PRIMARY KEY NOT NULL,
             value NOT NULL,
             encrypted BOOL NOT NULL,
-            modified INT NOT NULL,
-            auth_tag -- not present for encrypted items
+            modified INT NOT NULL
         );
     ")
 }
@@ -200,21 +200,10 @@ pub trait SecretsContainer {
 
     fn get_global<T: FromSql+Authable>(&self, key_name: &str) -> Result<T, SecretsError> {
         let conn = self.get_db();
-        let found: (String, T, Vec<u8>) = try!(conn.query_row(
-            "SELECT value, auth_tag FROM globals WHERE key = ? AND NOT encrypted",
+        let value: T = try!(conn.query_row(
+            "SELECT value FROM globals WHERE key = ? AND NOT encrypted",
             &[&key_name],
-            |row| (row.get(0),row.get(1),row.get(2))));
-        let (key_name, value, auth_tag): (String, T, Vec<u8>) = found;
-        let authed = {
-            let authable: &[&Authable] = &[
-                &key_name, &value
-            ];
-            let password = self.get_password();
-            keys::check_auth_items_with_password(&authable,
-                                                 &auth_tag,
-                                                 &password.as_bytes())
-        };
-        try!(authed);
+            |row| row.get(0)));
         return Ok(value)
     }
 
@@ -224,13 +213,10 @@ pub trait SecretsContainer {
         let authable: &[&Authable] = &[
             &key_name, value,
         ];
-        let auth_tag = keys::auth_items_with_password(&authable,
-                                                      &password.as_bytes());
-        let auth_tag = try!(auth_tag);
         try!(conn.execute("
-            INSERT OR REPLACE INTO globals(key, value, encrypted, auth_tag)
-            VALUES(?, ?, 0, ?)",
-            &[&key_name, value, &auth_tag]));
+            INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
+            VALUES(?, ?, ?, 0)",
+            &[&key_name, value, &time::get_time().sec]));
         Ok(())
     }
 
@@ -240,7 +226,7 @@ pub trait SecretsContainer {
             conn.query_row(
                 "SELECT value FROM globals WHERE key = ? AND encrypted",
                 &[&key_name],
-                |row| { row.get(0) })
+                |row| row.get(0))
         });
         let password = self.get_password();
         let plaintext = try!(keys::decrypt_blob_with_password(&ciphertext,
@@ -256,9 +242,10 @@ pub trait SecretsContainer {
         });
 
         let db = self.get_db();
-        try!(db.execute(
-            "INSERT OR REPLACE INTO globals(key, value, encrypted) VALUES(?, ?, 1)",
-            &[&key_name, &ciphertext]));
+        try!(db.execute("
+            INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
+            VALUES(?, ?, ?, 1)",
+            &[&key_name, &ciphertext, &time::get_time().sec]));
         return Ok(())
     }
 }

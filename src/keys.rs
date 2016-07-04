@@ -150,74 +150,68 @@ pub fn check_auth_items_with_password(items: &Authable, expected_tag: &[u8],
 
 /// Trait for things that we can build authentication tokens out of
 pub trait Authable {
-    fn to_authable(&self) -> &[u8];
+    fn to_authable(&self) -> Vec<u8>;
 }
 
-impl<'a, 'c> Authable for &'a [&'c Authable] {
-    fn to_authable<'b>(&self) -> &'b [u8] {
-        if self.len() == 1 {
-            return self[0].to_authable()
-        } else {
-            let mapped = self.iter().map(|v| v.to_authable());
-            let collected: Vec<&[u8]> = mapped.collect();
-            let joined = collected.join(&b',');
-            return &joined
-        }
+impl<'a, 'b> Authable for &'a [&'b Authable] {
+    fn to_authable(&self) -> Vec<u8> {
+        let mapped = self.iter().map(|v| v.to_authable());
+        let collected: Vec<Vec<u8>> = mapped.collect();
+        let joined = collected.join(&b',');
+        joined
     }
-
 }
 
 impl Authable for String {
-    fn to_authable<'a>(&'a self) -> &'a [u8] {
-        &self.as_bytes()
+    fn to_authable(&self) -> Vec<u8> {
+        self.as_bytes().to_vec()
     }
 }
 
 impl Authable for i64 {
-    fn to_authable<'a>(&'a self) -> &'a [u8] {
+    fn to_authable(&self) -> Vec<u8> {
         let s = format!("{}", self);
-        return &s.as_bytes()
+        s.as_bytes().to_vec()
     }
 }
 
 impl Authable for Option<i64> {
-    fn to_authable<'a>(&'a self) -> &'a [u8] {
-        // let s = format!("{}", self);
+    fn to_authable(&self) -> Vec<u8> {
         let s = match *self {
             Some(x) => format!("Some({})", x),
             None => "None".to_string(),
         };
-        &s.as_bytes()
+        s.as_bytes().to_vec()
     }
 }
 
 impl<'a> Authable for &'a [u8] {
-    fn to_authable<'b>(&'b self) -> &'b [u8] {
-        self
+    fn to_authable(&self) -> Vec<u8> {
+        self.to_vec()
     }
 }
 
 impl Authable for Vec<u8> {
-    fn to_authable<'a>(&'a self) -> &'a [u8] {
-        &self
+    fn to_authable(&self) -> Vec<u8> {
+        self.to_owned()
     }
 }
 
 impl<'a> Authable for &'a str {
-    fn to_authable<'b>(&'b self) -> &'b [u8] {
-        &self.as_bytes()
+    fn to_authable<'b>(&'b self) -> Vec<u8> {
+        self.as_bytes().to_vec()
     }
 }
 
 impl Authable for box_::PublicKey {
-    fn to_authable<'a>(&'a self) -> &'a [u8] {
-        &self.as_ref()
+    fn to_authable<'a>(&'a self) -> Vec<u8> {
+        self.as_ref().to_vec()
     }
 }
 
 impl Authable for sign::PublicKey {
-    fn to_authable<'a>(&'a self) -> &'a [u8] {
-        &self.as_ref()
+    fn to_authable<'a>(&'a self) -> Vec<u8> {
+        self.as_ref().to_vec()
     }
 }
 

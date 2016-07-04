@@ -8,6 +8,7 @@ use rusqlite;
 use rustc_serialize::base64::FromBase64;
 use serde_json::Value as JsonValue;
 use serde_json::from_slice as json_from_slice;
+use time;
 
 use keys;
 use utils;
@@ -117,60 +118,30 @@ impl SecretsServer {
                    public_key: box_::PublicKey,
                    public_sign: sign::PublicKey) -> Result<User, SecretsError> {
         let db = self.get_db();
-        let auth_tag = try!(keys::auth_items_with_password(&[&username.as_bytes(),
-                                                             &ssl_fingerprint.as_bytes(),
-                                                             &public_key.as_ref(),
-                                                             &public_sign.as_ref()],
-                                                           &self.password.as_bytes()));
+        let now = time::get_time().sec;
         try!(db.execute("
                 INSERT INTO users(username, ssl_fingerprint,
                                   public_key, public_sign,
-                                  auth_tag)
-                VALUES(?,?,?,?,?)
+                                  created,modified)
+                VALUES(?,?,?,?,?,?)
             ",
             &[&username, &ssl_fingerprint,
               &public_key.as_ref(), &public_sign.as_ref(),
-              &auth_tag]));
+              &now,&now]));
         let user = try!(self.get_user(&username));
         return Ok(user);
     }
 
     fn get_user(&self, username: &String) -> Result<User, SecretsError> {
-        let ret = try!(self.get_db().query_row("
+        let user = try!(self.get_db().query_row_and_then("
                 SELECT username, public_key, public_sign, ssl_fingerprint,
-                       created, modified, disabled, auth_tag
+                       created, modified, disabled
                 FROM users
                 WHERE username=?
             ",
             &[username],
-            |row| (row.get(0),row.get(1),row.get(2),row.get(3),
-                   row.get(4),row.get(5),row.get(6),row.get(7))));
-        let (username, public_key, public_sign, ssl_fingerprint,
-             created, modified, disabled, auth_tag):
-            (String,Vec<u8>,Vec<u8>,String,
-             i64,i64,Option<i64>,Vec<u8>) = ret;
-        try!(keys::check_auth_items_with_password(&[&username,
-                                                    &public_key,
-                                                    &public_sign,
-                                                    &ssl_fingerprint,
-                                                    &created,
-                                                    &modified,
-                                                    &disabled],
-                                                  &auth_tag,
-                                                  &self.password.as_bytes()));
-        let public_key = try!(box_::PublicKey::from_slice(&public_key)
-                            .ok_or(keys::CryptoError::CantDecrypt));
-        let public_sign = try!(sign::PublicKey::from_slice(&public_sign)
-                            .ok_or(keys::CryptoError::CantDecrypt));
-        return Ok(User {
-            username: username,
-            public_key: public_key,
-            public_sign: public_sign,
-            ssl_fingerprint: ssl_fingerprint,
-            created: created,
-            modified: modified,
-            disabled: disabled,
-        });
+            User::from_row));
+        return Ok(user);
     }
 
     fn user_exists(&self, username: &String) -> Result<bool, SecretsError> {
@@ -198,33 +169,14 @@ impl SecretsServer {
     }
 
     pub fn get_service(&self, service_name: &String) -> Result<Service, SecretsError> {
-        let ret = try!(self.get_db().query_row("
-                SELECT service_name, created, modified, creator, last_set_by,
-                       auth_tag
+        let service = try!(self.get_db().query_row_and_then("
+                SELECT service_name, created, modified, creator, last_set_by
                 FROM services
                 WHERE service_name=?
             ",
             &[service_name],
-            |row| (row.get(0),row.get(1),row.get(2),row.get(3),
-                   row.get(4), row.get(5))));
-        let (service_name, created, modified, creator,
-             last_set_by, auth_tag):
-            (String,i64,i64,String,String,
-             Vec<u8>) = ret;
-        try!(keys::check_auth_items_with_password(&[&service_name,
-                                                    &created,
-                                                    &modified,
-                                                    &creator,
-                                                    &last_set_by],
-                                                  &auth_tag,
-                                                  &self.password.as_bytes()));
-        return Ok(Service {
-            service_name: service_name,
-            created: created,
-            modified: modified,
-            creator: creator,
-            last_set_by: last_set_by
-        });
+            Service::from_row));
+        return Ok(service);
     }
 
     pub fn create_service(&mut self, user: &User,
@@ -256,7 +208,7 @@ pub struct User {
 }
 
 impl User {
-    fn from_row(row: rusqlite::Row, password: &String) -> Result<User, SecretsError> {
+    fn from_row(row: rusqlite::Row) -> Result<Self, SecretsError> {
         let public_key: Vec<u8> = row.get("public_key");
         let public_key = try!(box_::PublicKey::from_slice(&public_key.as_ref())
             .ok_or(keys::CryptoError::CantDecrypt));
@@ -274,34 +226,29 @@ impl User {
             modified: row.get("modified"),
             disabled: row.get("disabled"),
         };
-        let auth_code: Vec<u8> = row.get("auth_code");
-        try!(keys::check_auth_items_with_password(&u, &auth_code,
-                                                  &password.as_bytes()));
         Ok(u)
-    }
-}
-
-impl keys::Authable for User {
-    fn to_authable<'a>(&'a self) -> &'a [u8] {
-        let items: &[&keys::Authable] = &[
-            &self.username,
-            &self.public_key,
-            &self.public_sign,
-            &self.ssl_fingerprint,
-            &self.created,
-            &self.modified,
-            &self.disabled,
-        ];
-        items.to_authable()
     }
 }
 
 pub struct Service {
     service_name: String,
     created: i64,
-    modifed: i64,
+    modified: i64,
     creator: String,
     last_set_by: String
+}
+
+impl Service {
+    fn from_row(row: rusqlite::Row) -> Result<Self, SecretsError> {
+        let s = Service {
+            service_name: row.get("service_name"),
+            created: row.get("created"),
+            modified: row.get("modified"),
+            creator: row.get("creator"),
+            last_set_by: row.get("last_set_by"),
+        };
+        Ok(s)
+    }
 }
 
 pub struct Authorization {
@@ -319,8 +266,7 @@ fn create_server_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite:
             ssl_fingerprint NOT NULL,
             created INTEGER NOT NULL,
             modified INTEGER INTEGER NOT NULL,
-            disabled INTEGER NULL DEFAULT NULL,
-            auth_tag NOT NULL
+            disabled INTEGER NULL DEFAULT NULL
         );
 
         CREATE TABLE services (
@@ -328,8 +274,7 @@ fn create_server_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite:
             created INTEGER DEFAULT (STRFTIME('%s','now')),
             modified INTEGER DEFAULT (STRFTIME('%s','now')),
             creator REFERENCES users(username),
-            last_set_by REFERENCES users(username),
-            auth_tag NOT NULL
+            last_set_by REFERENCES users(username)
         );
 
         CREATE TABLE authorizations (
@@ -340,7 +285,6 @@ fn create_server_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite:
             first_grantor REFERENCES users(username), -- who initially gave them permission
             last_grantor REFERENCES users(username),
             ciphertext, -- encrypted to username's public key
-            auth_tag NOT NULL,
             PRIMARY KEY(username, service_name)
         );
     "));
