@@ -171,7 +171,7 @@ impl Authable for String {
 impl Authable for i64 {
     fn to_authable(&self) -> Vec<u8> {
         let s = format!("{}", self);
-        s.as_bytes().to_vec()
+        s.into_bytes()
     }
 }
 
@@ -181,7 +181,7 @@ impl Authable for Option<i64> {
             Some(x) => format!("Some({})", x),
             None => "None".to_string(),
         };
-        s.as_bytes().to_vec()
+        s.into_bytes()
     }
 }
 

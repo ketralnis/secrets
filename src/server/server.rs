@@ -117,25 +117,24 @@ impl SecretsServer {
                    ssl_fingerprint: String,
                    public_key: box_::PublicKey,
                    public_sign: sign::PublicKey) -> Result<User, SecretsError> {
-        let db = self.get_db();
         let now = time::get_time().sec;
-        try!(db.execute("
+        try!(self.db.execute("
                 INSERT INTO users(username, ssl_fingerprint,
                                   public_key, public_sign,
-                                  created,modified)
-                VALUES(?,?,?,?,?,?)
+                                  created)
+                VALUES(?,?,?,?,?)
             ",
             &[&username, &ssl_fingerprint,
               &public_key.as_ref(), &public_sign.as_ref(),
-              &now,&now]));
+              &now]));
         let user = try!(self.get_user(&username));
         return Ok(user);
     }
 
     fn get_user(&self, username: &String) -> Result<User, SecretsError> {
-        let user = try!(self.get_db().query_row_and_then("
+        let user = try!(self.db.query_row_and_then("
                 SELECT username, public_key, public_sign, ssl_fingerprint,
-                       created, modified, disabled
+                       created, disabled
                 FROM users
                 WHERE username=?
             ",
@@ -160,16 +159,18 @@ impl SecretsServer {
             },
             Err(x) => return Err(x),
         };
-        if utils::constant_time_compare(&user.ssl_fingerprint.as_bytes(),
-                                        &ssl_fingerprint.as_bytes()) {
-            return Ok(user)
-        } else {
+        if !utils::constant_time_compare(&user.ssl_fingerprint.as_bytes(),
+                                         &ssl_fingerprint.as_bytes()) {
             return Err(SecretsError::Authentication("bad fingerprint match"))
         }
+        if user.disabled.is_some() {
+            return Err(SecretsError::Authentication("user is disabled"))
+        }
+        return Ok(user);
     }
 
     pub fn get_service(&self, service_name: &String) -> Result<Service, SecretsError> {
-        let service = try!(self.get_db().query_row_and_then("
+        let service = try!(self.db.query_row_and_then("
                 SELECT service_name, created, modified, creator, last_set_by
                 FROM services
                 WHERE service_name=?
@@ -179,11 +180,95 @@ impl SecretsServer {
         return Ok(service);
     }
 
-    pub fn create_service(&mut self, user: &User,
-                          ciphertext: String,
-                          recipients: &[&User]) -> Result<Service, SecretsError> {
-        let trans = self.db.transaction();
-        return Err(SecretsError::NotImplemented("create_service"));
+    pub fn create_service(&mut self,
+                          service_name: String,
+                          user: &User,
+                          ciphertext: Vec<u8>) -> Result<Service, SecretsError> {
+        {
+            let now = time::get_time().sec;
+            let trans = try!(self.db.transaction());
+            try!(trans.execute("
+                    INSERT INTO services(service_name, created, modified,
+                                         creator, last_set_by)
+                    VALUES(?,?,?,?,?)
+                ",
+                &[&service_name, &now, &now, &user.username, &user.username]));
+            // we create the automatic self-grant
+            try!(trans.execute("
+                    INSERT INTO grants(service_name, grantor, grantee, ciphertext,
+                                       created)
+                    VALUES (?,?,?,?,?)
+                ",
+                &[&service_name, &user.username, &user.username, &ciphertext,
+                  &now]));
+            try!(trans.commit());
+        }
+        let service = try!(self.get_service(&service_name));
+        return Ok(service);
+    }
+
+    pub fn rotate_service(&mut self,
+                          service_name: String,
+                          grantor: &User,
+                          grants: &[(&User, &Vec<u8>, &sign::Signature)])
+                          -> Result<(), SecretsError> {
+        // make sure the service exists
+        let service = try!(self.get_service(&service_name));
+        let now = time::get_time().sec;
+        let trans = try!(self.db.transaction());
+        try!(trans.execute_batch("
+                CREATE TEMPORARY TABLE new_grants(grantee PRIMARY KEY)
+            "));
+        for &(ref grantee, ref ciphertext, ref signature) in grants {
+            if grantee.disabled.is_some() {
+                return Err(SecretsError::Authentication("can't grant to disabled user"));
+            }
+            // make sure the signature matches
+            if !sign::verify_detached(&signature,
+                                      ciphertext,
+                                      &grantor.public_sign) {
+                return Err(SecretsError::Crypto(keys::CryptoError::CantDecrypt));
+            }
+            try!(trans.execute("
+                    INSERT INTO new_grants(grantee) VALUES(?)
+                ", &[&grantee.username]));
+            try!(trans.execute("
+                    INSERT OR REPLACE INTO grants(grantor, grantee, service_name,
+                                                  created, ciphertext, signature)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ", &[&grantor.username, &grantee.username, &service.service_name,
+                     &now, *ciphertext, &signature.as_ref()]));
+            try!(trans.execute("
+                    UPDATE services SET modified=?, last_set_by=?
+                ", &[&now, &grantor.username]));
+            try!(trans.execute_batch("
+                    DELETE FROM grants
+                    WHERE grantee NOT IN (SELECT grantee FROM new_grants);
+                "));
+        }
+        try!(trans.commit());
+        return Ok(());
+    }
+
+    pub fn get_grant(&self,
+                     service_name: String,
+                     user: &User)
+                     -> Result<Grant, SecretsError> {
+        let grant = try!(self.db.query_row_and_then("
+                SELECT service_name, grantee, grantor, ciphertext, signature, created
+                FROM grants
+                WHERE service_name = ? AND grantee = ?
+             ",
+            &[&service_name, &user.username],
+            Grant::from_row));
+        // verify the signature on the grant TODO these can be NULL if it was granted and taken away
+        let grantor = try!(self.get_user(&grant.grantor));
+        if !sign::verify_detached(&grant.signature,
+                                  &grant.ciphertext,
+                                  &grantor.public_sign) {
+            return Err(SecretsError::Crypto(keys::CryptoError::CantDecrypt));
+        }
+        return Ok(grant);
     }
 }
 
@@ -203,7 +288,6 @@ pub struct User {
     public_sign: sign::PublicKey,
     ssl_fingerprint: String,
     created: i64,
-    modified: i64,
     disabled: Option<i64>,
 }
 
@@ -223,7 +307,6 @@ impl User {
             public_sign: public_sign,
             ssl_fingerprint: row.get("ssl_fingerprint"),
             created: row.get("created"),
-            modified: row.get("modified"),
             disabled: row.get("disabled"),
         };
         Ok(u)
@@ -251,10 +334,32 @@ impl Service {
     }
 }
 
-pub struct Authorization {
-    username: String,
+pub struct Grant {
+    grantee: String,
+    grantor: String,
     service_name: String,
-    ciphertext: String,
+    ciphertext: Vec<u8>,
+    signature: sign::Signature,
+    created: i64,
+}
+
+impl Grant {
+    fn from_row(row: rusqlite::Row) -> Result<Self, SecretsError> {
+        let sig: Vec<u8> = row.get("signature");
+        let signature = try!(
+            sign::Signature::from_slice(&sig)
+            .ok_or(keys::CryptoError::CantDecrypt));
+
+        let u = Grant {
+            grantee: row.get("grantee"),
+            grantor: row.get("grantor"),
+            service_name: row.get("service_name"),
+            ciphertext: row.get("ciphertext"),
+            signature: signature,
+            created: row.get("created"),
+        };
+        Ok(u)
+    }
 }
 
 fn create_server_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error> {
@@ -265,28 +370,27 @@ fn create_server_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite:
             public_sign NOT NULL,
             ssl_fingerprint NOT NULL,
             created INTEGER NOT NULL,
-            modified INTEGER INTEGER NOT NULL,
             disabled INTEGER NULL DEFAULT NULL
         );
 
         CREATE TABLE services (
             service_name PRIMARY KEY NOT NULL,
-            created INTEGER DEFAULT (STRFTIME('%s','now')),
-            modified INTEGER DEFAULT (STRFTIME('%s','now')),
+            created INTEGER NOT NULL,
+            modified INTEGER NOT NULL,
             creator REFERENCES users(username),
-            last_set_by REFERENCES users(username)
+            last_set_by NULL REFERENCES users(username)
         );
 
-        CREATE TABLE authorizations (
-            username REFERENCES users(username),
+        CREATE TABLE grants (
+            grantee REFERENCES users(username),
             service_name REFERENCES services(service_name),
-            created INTEGER DEFAULT (STRFTIME('%s','now')),
-            modified INTEGER DEFAULT (STRFTIME('%s','now')),
-            first_grantor REFERENCES users(username), -- who initially gave them permission
-            last_grantor REFERENCES users(username),
-            ciphertext, -- encrypted to username's public key
-            PRIMARY KEY(username, service_name)
+            created INTEGER NOT NULL,
+            grantor REFERENCES users(username),
+            ciphertext, -- encrypted by grantor's secret key to grantee's public key
+            signature, -- signed by grantor's public key
+            PRIMARY KEY(grantee, service_name)
         );
+        CREATE INDEX grants_services ON grants(service_name);
     "));
 
     Ok(())
@@ -333,8 +437,25 @@ mod tests {
                                           f_public_key,
                                           f_public_sign).unwrap();
 
-        server.create_service(&david,
-                              "ciphertext".to_string(),
-                              &[&florence]).unwrap();
+        server.create_service("service1".to_string(),
+                              &david,
+                              "ciphertext".as_bytes().to_vec()).unwrap();
+
+        // david will need to get Florence's public key first
+        let florence = server.get_user(&"florence".to_string()).unwrap();
+        let signed = sign::sign_detached(&"ciphertext".as_bytes(),
+                                         &d_private_sign);
+
+        server.rotate_service("service1".to_string(),
+                              &david,
+                              &[(&florence,
+                                 &"ciphertext".as_bytes().to_vec(),
+                                 &signed)
+                               ]).unwrap();
+
+        // now florence should be able to find that and get the grant
+        let grant = server.get_grant("service1".to_string(),
+                                     &florence).unwrap();
+        assert_eq!(grant.ciphertext, "ciphertext".as_bytes().to_vec());
     }
 }
