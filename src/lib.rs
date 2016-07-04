@@ -13,6 +13,7 @@ extern crate byteorder;
 #[cfg(test)] extern crate tempdir;
 extern crate rustc_serialize;
 extern crate time;
+extern crate tempfile;
 
 mod utils;
 mod keys;

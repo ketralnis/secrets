@@ -13,6 +13,7 @@ use openssl::ssl::init as init_openssl;
 use utils;
 use password;
 use client::client;
+use common::SecretsContainer;
 
 // TODO this renders like crap
 // TODO move this
@@ -25,7 +26,8 @@ pub const PASSWORD_SOURCE_HELP: &'static str = "Where to get the master password
 ";
 
 pub fn main() {
-    let matches = App::new("secrets-client")
+    let mut clapapp = App::new("secrets-client")
+        .setting(AppSettings::SubcommandRequiredElseHelp)
         .arg(Arg::with_name("db")
             .short("d").long("--db")
             .value_name("FILENAME")
@@ -38,7 +40,6 @@ pub fn main() {
              .takes_value(true)
              .default_value("prompt")
              .validator(password::validate_password_source))
-        .setting(AppSettings::SubcommandRequiredElseHelp)
         .subcommand(SubCommand::with_name("join")
             .arg(Arg::with_name("username")
                 .short("u").long("username")
@@ -50,11 +51,44 @@ pub fn main() {
                 .takes_value(true)
                 .required(true)))
         .subcommand(SubCommand::with_name("check-server"))
-        .get_matches();
+        .subcommand(SubCommand::with_name("create")
+            .arg(Arg::with_name("service_name")
+                .index(1)
+                .takes_value(true)
+                .required(true))
+            .arg(Arg::with_name("source")
+                .index(2)
+                .takes_value(true)
+                .required(false)
+                .default_value("prompt")
+                .validator(password::validate_password_source))
+            .arg(Arg::with_name("grants")
+                .long("grants")
+                .takes_value(true)));
+
+    if cfg!(not(ndebug)) {
+        clapapp = clapapp.subcommand(SubCommand::with_name("echo-password")
+            .arg(Arg::with_name("source")
+                .index(1)
+                .takes_value(true)
+                .required(true)
+                .validator(password::validate_password_source)));
+    }
+
+    let matches = clapapp.get_matches();
 
     init_openssl();
     env_logger::init().unwrap();
     sodiumoxide::init();
+
+    // a command for testing the password source system
+    if let ("echo-password", Some(subargs)) = matches.subcommand() {
+        let pwsd = subargs.value_of("source").unwrap().to_string();
+        let pws = password::parse_password_source(&pwsd).unwrap();
+        let pw = password::evaluate_password_source(pws).unwrap();
+        println!("{}", pw);
+        exit(0);
+    }
 
     // find or infer the location of .secrets-client.db
     if matches.value_of_os("db") == None && env::home_dir() == None {
@@ -104,28 +138,29 @@ pub fn main() {
         exit(0);
     }
 
+    // otherwise they have a valid user already
+    let instance = client::SecretsClient::connect(config_file, pw).unwrap();
+    let username: String = instance.get_global("username").unwrap();
+
     if let ("check-server", Some(_)) = matches.subcommand() {
-        let instance = client::SecretsClient::connect(config_file, pw).unwrap();
         instance.check_server().unwrap();
         exit(0);
     }
 
     match matches.subcommand() {
-        // ("join", Some(subargs)) => {
-        //     let username = subargs.value_of("username").unwrap().to_string();
-        //     let host = subargs.value_of("host").unwrap().to_string();
-        //     create_config(config_file, username, host)
-        // }
+        ("create", Some(subargs)) => {
+            println!("1");
+            let service_name = subargs.value_of("service_name").unwrap();
+            println!("2");
+            let grantees = subargs.value_of("grants");
+            println!("3");
+            let secret_source = subargs.value_of("source").unwrap();
+            println!("4");
+            let secret_source = password::parse_password_source(secret_source).unwrap();
+            println!("5");
+            let secret_value = password::evaluate_password_source(secret_source);
+            println!("6");
+        }
         _ => unreachable!()
     }
 }
-
-
-// fn create_config<P: AsRef<Path>>(config_file: P, username: String, host: String) {
-//     // boostraps all of our config
-//     let (public_key, private_key) = keys::create_key();
-//     let conn = client_conn::ClientConn::new(host.to_owned());
-//     let db = client_db::create_db(config_file, username, host);
-//     // TODO create and print request
-// }
-//

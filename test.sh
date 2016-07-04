@@ -60,9 +60,9 @@ done
 CLIENT1="./target/debug/secrets-client -d ./tmp/client-dking.db -p pass:password_dking"
 CLIENT2="./target/debug/secrets-client -d ./tmp/client-florence.db -p pass:password_florence"
 
-$CLIENT1 create twitter pass:twitterpass
+$CLIENT1 create twitter pass:twitterpass --grants=dking
 $CLIENT1 info twitter
-$CLIENT1 authorize twitter florence
+$CLIENT1 grant twitter florence
 $CLIENT1 info twitter
 
 $CLIENT1 list --mine | grep twitter
@@ -86,6 +86,7 @@ $SERVER fire florence | grep -E "twitter"
 
 $CLIENT1 rotate twitter pass:newtwitterpass1 --withhold florence
 $CLIENT1 rotate twitter pass:newtwitterpass2 --only dking
+$CLIENT1 rotate twitter edit:$(which cat) --only dking
 
 echo hello | $CLIENT1 encrypt florence > tmp/encrypted.bydavid
 $CLIENT2 decrypt < tmp/encrypted.bydavid | grep hello
