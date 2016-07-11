@@ -1,19 +1,18 @@
 use std::env;
 use std::io;
-use std::process::exit;
 use std::io::Write;
-use std::path::PathBuf;
 use std::os::unix::ffi::OsStrExt;
+use std::path::PathBuf;
+use std::process::exit;
 
-use env_logger;
 use clap::{Arg, App, AppSettings, SubCommand};
-use sodiumoxide;
+use env_logger;
 use openssl::ssl::init as init_openssl;
+use sodiumoxide;
 
-use utils;
-use password;
 use client::client;
-use common::SecretsContainer;
+use password;
+use utils;
 
 // TODO this renders like crap
 // TODO move this
@@ -129,8 +128,8 @@ pub fn main() {
     if let ("join", Some(subargs)) = matches.subcommand() {
         let username = subargs.value_of("username").unwrap().to_string();
         let host = subargs.value_of("host").unwrap().to_string();
-        let mut client = client::SecretsClient::create(config_file, host,
-                                                       username, pw).unwrap();
+        let client = client::SecretsClient::create(config_file, host,
+                                                   username, pw).unwrap();
         let request_payload = client.generate_join_request().unwrap();
         io::stderr().write("Send this to your friendly local secrets admin:\n".as_bytes()).unwrap();
         io::stdout().write(request_payload.as_bytes()).unwrap();
@@ -139,8 +138,7 @@ pub fn main() {
     }
 
     // otherwise they have a valid user already
-    let instance = client::SecretsClient::connect(config_file, pw).unwrap();
-    let username: String = instance.get_global("username").unwrap();
+    let mut instance = client::SecretsClient::connect(config_file, pw).unwrap();
 
     if let ("check-server", Some(_)) = matches.subcommand() {
         instance.check_server().unwrap();
@@ -149,17 +147,17 @@ pub fn main() {
 
     match matches.subcommand() {
         ("create", Some(subargs)) => {
-            println!("1");
             let service_name = subargs.value_of("service_name").unwrap();
-            println!("2");
-            let grantees = subargs.value_of("grants");
-            println!("3");
+            let grantees = subargs.value_of("grants")
+                .map(|v| v.split(",").map(|v| v.to_owned()).collect::<Vec<String>>())
+                .unwrap_or(Vec::new());
             let secret_source = subargs.value_of("source").unwrap();
-            println!("4");
             let secret_source = password::parse_password_source(secret_source).unwrap();
-            println!("5");
-            let secret_value = password::evaluate_password_source(secret_source);
-            println!("6");
+            let secret_value = password::evaluate_password_source(secret_source).unwrap();
+            instance.create_service(service_name.to_owned(),
+                                    secret_value.to_owned(),
+                                    grantees).unwrap();
+            exit(0);
         }
         _ => unreachable!()
     }

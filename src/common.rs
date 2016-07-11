@@ -1,32 +1,32 @@
 /// code shared by SecretsClient and SecretsServer
 
-use std::path::Path;
 use std::io;
-use std::io::Write;
-use std::io::Read;
 use std::io::Cursor;
+use std::io::Write;
+use std::path::Path;
 
-use sodiumoxide::crypto::box_;
-use sodiumoxide::crypto::sign;
-use openssl::x509::X509;
-use openssl::crypto::pkey::PKey;
-use openssl::ssl::error::SslError;
-use openssl::x509::X509Generator;
-use openssl::x509::extension::KeyUsageOption::DigitalSignature;
-use openssl::crypto::hash::Type as HashType;
-use openssl::x509::extension::Extension::KeyUsage;
-use rusqlite::types::ToSql;
-use rusqlite::types::FromSql;
-use openssl::nid::Nid;
 use hyper;
+use openssl::crypto::hash::Type as HashType;
+use openssl::crypto::pkey::PKey;
+use openssl::nid::Nid;
+use openssl::ssl::error::SslError;
+use openssl::x509::extension::Extension::KeyUsage;
+use openssl::x509::extension::KeyUsageOption::DigitalSignature;
+use openssl::x509::X509;
+use openssl::x509::X509Generator;
 use rusqlite;
+use rusqlite::types::FromSql;
+use rusqlite::types::ToSql;
 use serde_json::Error as SerdeError;
 use serde_json::Value as JsonValue;
+use sodiumoxide::crypto::box_;
+use sodiumoxide::crypto::sign;
 use time;
+use url::ParseError;
 
-use utils;
 use keys;
 use keys::Authable;
+use utils;
 
 quick_error! {
     #[derive(Debug)]
@@ -35,14 +35,14 @@ quick_error! {
         Ssl(err: SslError) {from()}
         Crypto(err: keys::CryptoError) {from()}
         HyperError(err: hyper::Error) {from()}
+        Parse(err: ParseError) {from()}
         Io(err: io::Error) {from()}
         Json(err: SerdeError) {from()}
         ServerError(err: String) {} // client had a problem communicating with server
         ServerResponseError(err: String) {} // client didn't like something the server sent
+        ClientError(err: String) {} // server didn't like something the client sent
         Authentication(err: &'static str) {}
         Unknown(err: &'static str) {}
-
-        NotImplemented(err: &'static str) {}
     }
 }
 
@@ -209,10 +209,6 @@ pub trait SecretsContainer {
 
     fn set_global<'a, T: ToSql+Authable>(&mut self, key_name: &str, value: &'a T) -> Result<(), SecretsError> {
         let conn = self.get_db();
-        let password = self.get_password();
-        let authable: &[&Authable] = &[
-            &key_name, value,
-        ];
         try!(conn.execute("
             INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
             VALUES(?, ?, ?, 0)",

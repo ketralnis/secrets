@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["David King <dking@ketralnis.com>"]
 
 [dependencies]
-clap = "2"
+clap = "2.9.2"
 rusqlite = "0.7.3"
 sodiumoxide = "0.0.10"
 openssl = "0.7.13"
@@ -18,8 +18,9 @@ tempdir = "0.3"
 tempfile = "2.1.4"
 rustc-serialize = "0.3.19"
 serde = "0.7.8"
-serde_json = "0.7.1"
+serde_json = "0.7.4"
 time = "0.1"
+url = "1.0"
 
 [dependencies.hyper]
 version = "0.9.7"

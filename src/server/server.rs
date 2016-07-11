@@ -1,20 +1,20 @@
-use std::path::Path;
 use std::io;
 use std::io::Write;
+use std::path::Path;
 
-use sodiumoxide::crypto::box_;
-use sodiumoxide::crypto::sign;
 use rusqlite;
 use rustc_serialize::base64::FromBase64;
-use serde_json::Value as JsonValue;
 use serde_json::from_slice as json_from_slice;
+use serde_json::Value as JsonValue;
+use sodiumoxide::crypto::box_;
+use sodiumoxide::crypto::sign;
 use time;
 
+use common;
+use common::SecretsContainer;
+use common::SecretsError;
 use keys;
 use utils;
-use common::SecretsError;
-use common::SecretsContainer;
-use common;
 
 pub struct SecretsServer {
     db: rusqlite::Connection,
@@ -171,7 +171,7 @@ impl SecretsServer {
 
     pub fn get_service(&self, service_name: &String) -> Result<Service, SecretsError> {
         let service = try!(self.db.query_row_and_then("
-                SELECT service_name, created, modified, creator, last_set_by
+                SELECT service_name, created, modified, creator, modified_by
                 FROM services
                 WHERE service_name=?
             ",
@@ -189,7 +189,7 @@ impl SecretsServer {
             let trans = try!(self.db.transaction());
             try!(trans.execute("
                     INSERT INTO services(service_name, created, modified,
-                                         creator, last_set_by)
+                                         creator, modified_by)
                     VALUES(?,?,?,?,?)
                 ",
                 &[&service_name, &now, &now, &user.username, &user.username]));
@@ -239,7 +239,7 @@ impl SecretsServer {
                 ", &[&grantor.username, &grantee.username, &service.service_name,
                      &now, *ciphertext, &signature.as_ref()]));
             try!(trans.execute("
-                    UPDATE services SET modified=?, last_set_by=?
+                    UPDATE services SET modified=?, modified_by=?
                 ", &[&now, &grantor.username]));
             try!(trans.execute_batch("
                     DELETE FROM grants
@@ -282,13 +282,14 @@ impl SecretsContainer for SecretsServer {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct User {
-    username: String,
-    public_key: box_::PublicKey,
-    public_sign: sign::PublicKey,
-    ssl_fingerprint: String,
-    created: i64,
-    disabled: Option<i64>,
+    pub username: String,
+    pub public_key: box_::PublicKey,
+    pub public_sign: sign::PublicKey,
+    pub ssl_fingerprint: String,
+    pub created: i64,
+    pub disabled: Option<i64>,
 }
 
 impl User {
@@ -313,12 +314,13 @@ impl User {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Service {
-    service_name: String,
-    created: i64,
-    modified: i64,
-    creator: String,
-    last_set_by: String
+    pub service_name: String,
+    pub created: i64,
+    pub modified: i64,
+    pub creator: String,
+    pub modified_by: String
 }
 
 impl Service {
@@ -328,19 +330,20 @@ impl Service {
             created: row.get("created"),
             modified: row.get("modified"),
             creator: row.get("creator"),
-            last_set_by: row.get("last_set_by"),
+            modified_by: row.get("modified_by"),
         };
         Ok(s)
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Grant {
-    grantee: String,
-    grantor: String,
-    service_name: String,
-    ciphertext: Vec<u8>,
-    signature: sign::Signature,
-    created: i64,
+    pub grantee: String,
+    pub grantor: String,
+    pub service_name: String,
+    pub ciphertext: Vec<u8>,
+    pub signature: sign::Signature,
+    pub created: i64,
 }
 
 impl Grant {
@@ -378,7 +381,7 @@ fn create_server_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite:
             created INTEGER NOT NULL,
             modified INTEGER NOT NULL,
             creator REFERENCES users(username),
-            last_set_by NULL REFERENCES users(username)
+            modified_by NULL REFERENCES users(username)
         );
 
         CREATE TABLE grants (
@@ -420,7 +423,7 @@ mod tests {
         let mut server = SecretsServer::connect(tempfile, password.to_string()).unwrap();
 
         debug!("Creating users");
-        let (d_public_key, d_private_key) = box_::gen_keypair();
+        let (d_public_key, _d_private_key) = box_::gen_keypair();
         let (d_public_sign, d_private_sign) = sign::gen_keypair();
         let david = server.create_user("david".to_string(),
                                        "david_fingerprint".to_string(),
@@ -430,12 +433,12 @@ mod tests {
                                                 &"david_fingerprint".to_string()).unwrap();
         assert_eq!(david.username, authenticated.username);
 
-        let (f_public_key, private_key) = box_::gen_keypair();
-        let (f_public_sign, private_sign) = sign::gen_keypair();
-        let florence = server.create_user("florence".to_string(),
-                                          "florence_fingerprint".to_string(),
-                                          f_public_key,
-                                          f_public_sign).unwrap();
+        let (f_public_key, _f_private_key) = box_::gen_keypair();
+        let (f_public_sign, _f_private_sign) = sign::gen_keypair();
+        let _florence = server.create_user("florence".to_string(),
+                                           "florence_fingerprint".to_string(),
+                                           f_public_key,
+                                           f_public_sign).unwrap();
 
         server.create_service("service1".to_string(),
                               &david,

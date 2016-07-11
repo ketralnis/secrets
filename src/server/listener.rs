@@ -1,136 +1,323 @@
-use std::sync::Mutex;
+use std::collections::hash_map::{Entry, VacantEntry, OccupiedEntry};
+use std::collections::HashMap;
+use std::io::Error as IOError;
+use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::Mutex;
 
+use hyper::method::Method;
+use hyper::net::HttpStream;
+use hyper::net::Openssl;
 use hyper::server::{Handler, Request, Response};
 use hyper::server::Server as HyperServer;
-use hyper::method::Method;
 use hyper::status::StatusCode;
 use hyper::uri::RequestUri;
-use hyper::net::Openssl;
-use hyper::net::HttpStream;
+use openssl::crypto::hash::Type as HashType;
+use openssl::nid::Nid;
+use openssl::ssl::{SSL_VERIFY_PEER, SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
 use openssl::ssl::SslContext;
 use openssl::ssl::SslMethod;
 use openssl::ssl::SslStream;
-use openssl::ssl::{SSL_VERIFY_NONE, SSL_VERIFY_PEER, SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
 use openssl::x509::X509StoreContext;
-use openssl::crypto::hash::Type as HashType;
-use openssl::nid::Nid;
 use serde_json::builder::ObjectBuilder;
-use serde_json::ser::to_string;
+use serde_json::ser::to_string as json_to_string;
+use serde_json::value::Value as JsonValue;
+use sodiumoxide::crypto::box_;
+use sodiumoxide::crypto::sign;
+use url::form_urlencoded::parse as parse_qs;
 
-use utils;
-use server::server::SecretsServer;
-use server::server::User;
-use common::SecretsError;
 use common::SecretsContainer;
+use common::SecretsError;
+use server::server::{User, Service, Grant};
+use server::server::SecretsServer;
+use utils;
 
 struct ServerHandler {
     instance: Arc<Mutex<SecretsServer>>
 }
 
 impl ServerHandler {
-    fn check_db(&self, instance: &SecretsServer) -> Result<ObjectBuilder, SecretsError> {
-        try!(instance.check_db());
-        let builder = ObjectBuilder::new()
-            .insert("healthy", "yes");
-        return Ok(builder);
+    fn _handle(&self,
+               mut instance: &mut SecretsServer,
+               request: &Request)
+            -> Result<ApiResponse, SecretsError> {
+
+        let mut api = ApiResponse::new();
+
+        if url_matches(&request, Method::Get, "/api/health") {
+            let healthy = try!(instance.check_db());
+            api.set_healthy(true);
+            return Ok(api);
+        }
+
+        if url_matches(&request, Method::Get, "/api/info") {
+            let server_info = try!(ServerInfo::new(&mut instance));
+            api.set_server_info(server_info);
+            return Ok(api);
+        }
+
+        // ================ authentication required from here ================
+
+        let user = try!(authenticate_request(&instance, &request));
+
+        if url_matches(&request, Method::Get, "/api/auth") {
+            // this URL only checks that the client can authenticate. they don't
+            // really care about the result
+            api.add_user(user);
+            return Ok(api);
+        }
+
+        let query_params: HashMap<String, Vec<String>> = get_query_params(&request);
+
+        if url_matches(&request, Method::Get, "/api/user") {
+            let unames = query_params.get("user");
+
+            if let Some(unames) = unames {
+                for ref uname in unames {
+                    // TODO we have to actually implement this
+                    println!("user: {:?}", uname);
+                }
+            }
+        }
+
+        api.set_status_code(StatusCode::NotFound));
+        Ok(api)
     }
 
-    fn server_info(&self, instance: &SecretsServer) -> Result<ObjectBuilder, SecretsError> {
+    fn write_response(&self,
+                      api: ApiResponse,
+                      mut response: Response) -> Result<(), SecretsError> {
+        let (status_code, j_value) = api.to_response();
+
+        match json_to_string(&j_value) {
+            Ok(value_str) => {
+                *response.status_mut() = status_code;
+                try!(response.send(value_str.as_bytes()));
+                Ok(())
+            },
+            Err(error) => {
+                error!("Error encoding JSON: {:?}", error);
+                *response.status_mut() = StatusCode::InternalServerError;
+                try!(response.start());
+                Ok(())
+            }
+        }
+    }
+
+    fn write_error(&self,
+                   error: &SecretsError,
+                   mut response: Response)
+                   -> Result<(), IOError> {
+        // Secrets has two kinds of errors: A regular ApiResponse can have
+        // `error` set on it in which case write_response will handle it.
+        // Otherwise if an Error (in the rust keyword sense) is raised during
+        // processing, we get called with it. We try to guess the right return
+        // code to set
+
+        match error {
+            &SecretsError::ClientError(ref err) => {
+                *response.status_mut() = StatusCode::BadRequest;
+                response.send(&format!("{}", err).as_bytes())
+            },
+            &SecretsError::Authentication(ref err) => {
+                *response.status_mut() = StatusCode::Unauthorized;
+                response.send(&format!("{}", err).as_bytes())
+            },
+            &SecretsError::Crypto(_) | _ => {
+                // SecretsError::Crypto is probably because they are screwing
+                // around with trying to guess keys or something. It's important
+                // that they not be able to tell it from any other internal
+                // error
+                *response.status_mut() = StatusCode::InternalServerError;
+                response.send(b"")
+            },
+        }
+    }
+}
+
+impl Handler for ServerHandler {
+    fn handle(&self, request: Request, mut response: Response) -> () {
+        // every request takes out a lock on the SecretsServer instance. This
+        // means that we have no real concurrency to speak of, anywhere in the
+        // server. It doesn't have to be this way but this simplifies things
+        // signficantly (no DB connection pooling or anything). If this is a
+        // performance problem it can be fixed, but I doubt we'll ever see real
+        // concurrent connections to speak of
+        let mut instance = self.instance.lock().unwrap();
+
+        match self._handle(&mut instance, &request) {
+            Ok(api_response) => {
+                debug!("response: {:?}", api_response);
+                match self.write_response(api_response, response) {
+                    Ok(()) => (), // all good!
+                    Err(err) => {
+                        // the request was a success, but we couldn't write it
+                        // out. this is probably a closed socket
+                        error!("Error writing response {:?}", err);
+                    }
+                }
+            },
+            Err(err_o) => {
+                error!("request error {:?}", err_o);
+                match self.write_error(&err_o, response) {
+                    Ok(()) => {
+                        // this is a regular old error during request
+                        // processing. it's probably a bug but could be bad
+                        // ciphertext or something
+                        ()
+                    }
+                    Err(err_i) => {
+                        error!("Error writing error {:?}: {:?}", err_o, err_i);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ApiResponse {
+    healthy: Option<bool>,
+    status_code: Option<StatusCode>, // if None try to autodetect
+    users: Vec<User>,
+    services: Vec<Service>,
+    grants: Vec<Grant>,
+    error: Option<String>,
+    server_info: Option<ServerInfo>,
+}
+
+impl ApiResponse {
+    fn new() -> Self {
+        ApiResponse {
+            healthy: None,
+            status_code: None,
+            users: vec![],
+            services: vec![],
+            grants: vec![],
+            error: None,
+            server_info: None,
+        }
+    }
+
+    fn set_healthy(&mut self, healthy: bool) -> &mut Self {
+        self.healthy = Some(healthy);
+        return self;
+    }
+
+    fn set_status_code(&mut self, status_code: StatusCode) -> &mut Self {
+        self.status_code = Some(status_code);
+        return self;
+    }
+
+    fn set_server_info(&mut self, server_info: ServerInfo) -> &mut Self {
+        self.server_info = Some(server_info);
+        return self;
+    }
+
+    fn add_user(&mut self, user: User) -> &mut Self {
+        self.users.push(user);
+        return self;
+    }
+
+    fn add_service(&mut self, service: Service) -> &mut Self {
+        self.services.push(service);
+        return self;
+    }
+
+    fn add_grant(&mut self, grant: Grant) -> &mut Self {
+        self.grants.push(grant);
+        return self;
+    }
+
+    fn to_response(mut self) -> (StatusCode, JsonValue) {
+        let mut ob = ObjectBuilder::new();
+
+        if let Some(healthy) = self.healthy {
+            ob = ob.insert("healthy", healthy);
+        }
+
+        if let Some(server_info) = self.server_info {
+            ob = ob.insert("server_info", server_info.to_response());
+        }
+
+        if !self.users.is_empty() {
+            let mut j_users = ObjectBuilder::new();
+            for user in self.users.drain(..) {
+                let key = user.username.clone();
+                let mut j_user = ObjectBuilder::new()
+                    .insert("username", user.username)
+                    .insert("public_key", utils::hex(&user.public_key.as_ref()))
+                    .insert("public_sign", utils::hex(&user.public_sign.as_ref()))
+                    .insert("ssl_fingerprint", user.ssl_fingerprint)
+                    .insert("created", user.created);
+                j_users = j_users.insert(key, j_user.unwrap());
+            }
+            ob = ob.insert("users", j_users.unwrap());
+        }
+        if !self.services.is_empty() {
+            let mut j_services = ObjectBuilder::new();
+            for service in self.services.drain(..) {
+                let key = service.service_name.clone();
+                let mut j_service = ObjectBuilder::new()
+                    .insert("service_name", service.service_name)
+                    .insert("created", service.created)
+                    .insert("modified", service.modified)
+                    .insert("creator", service.creator)
+                    .insert("modified_by", service.modified_by);
+                j_services = j_services.insert(key, j_service.unwrap());
+            }
+            ob = ob.insert("services", j_services.unwrap());
+        }
+        if !self.grants.is_empty() {
+            let mut j_grants = ObjectBuilder::new();
+            for grant in self.grants.drain(..) {
+                let key = format!("{}/{}", grant.service_name, grant.grantee);
+                let mut j_grant = ObjectBuilder::new()
+                    .insert("grantee", grant.grantee)
+                    .insert("grantor", grant.grantor)
+                    .insert("service_name", grant.service_name)
+                    .insert("ciphertext", utils::hex(&grant.ciphertext))
+                    .insert("signature", utils::hex(&grant.signature.as_ref()))
+                    .insert("created", grant.created);
+                j_grants = j_grants.insert(key, j_grant.unwrap());
+            }
+            ob = ob.insert("grants", j_grants.unwrap());
+        }
+
+        return (self.status_code.unwrap_or(StatusCode::Ok), ob.unwrap());
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ServerInfo {
+    server_cn: String,
+    server_fingerprint: String,
+    server_public_key: box_::PublicKey,
+    server_public_sign: sign::PublicKey,
+}
+
+impl ServerInfo {
+    fn new(instance: &mut SecretsServer) -> Result<Self, SecretsError> {
         let server_cn = try!(instance.ssl_cn());
         let server_fingerprint = try!(instance.ssl_fingerprint());
         let (public_key, _) = try!(instance.get_keys());
         let (public_sign, _) = try!(instance.get_signs());
 
-        let builder = ObjectBuilder::new()
-            .insert("server_cn", server_cn)
-            .insert("server_fingerprint", server_fingerprint)
-            .insert("server_public_key", utils::hex(&public_key.as_ref()))
-            .insert("server_public_sign", utils::hex(&public_sign.as_ref()));
-        return Ok(builder);
+        return Ok(ServerInfo {
+            server_cn: server_cn,
+            server_fingerprint: server_fingerprint,
+            server_public_key: public_key,
+            server_public_sign: public_sign,
+        })
     }
 
-    fn return_json(&self,
-                   maybe_builder: Result<ObjectBuilder, SecretsError>,
-                   mut response: Response) -> () {
-        match maybe_builder {
-            Result::Ok(builder) => {
-                let value = builder.unwrap(); // not a panicking unwrap
-
-                match to_string(&value) {
-                    Result::Ok(value_str) => {
-                        *response.status_mut() = StatusCode::Ok;
-                        response.send(value_str.as_bytes()).unwrap();
-                    },
-                    Result::Err(error) => {
-                        error!("Error encoding JSON: {:?}", error);
-                        *response.status_mut() = StatusCode::InternalServerError;
-                        response.start().unwrap().end().unwrap();
-                    }
-                }
-            },
-            Result::Err(error) => {
-                error!("Error in request: {:?}", error);
-                *response.status_mut() = StatusCode::InternalServerError;
-                response.start().unwrap().end().unwrap();
-            }
-        }
-    }
-
-    fn return_error(&self, err_str: &str, mut response: Response, status_code: StatusCode) {
-        *response.status_mut() = status_code;
-        let value = ObjectBuilder::new()
-            .insert("error", err_str)
+    fn to_response(self) -> JsonValue {
+        return ObjectBuilder::new()
+            .insert("server_cn", self.server_cn)
+            .insert("server_fingerprint", self.server_fingerprint)
+            .insert("server_public_key", utils::hex(&self.server_public_key.as_ref()))
+            .insert("server_public_sign", utils::hex(&self.server_public_sign.as_ref()))
             .unwrap();
-        response.send(to_string(&value).unwrap().as_bytes()).unwrap();
-    }
-}
-
-impl Handler for ServerHandler {
-    fn handle(&self, request: Request, response: Response) -> () {
-        let ref instance = *self.instance.lock().unwrap();
-
-        if url_matches(&request, Method::Get, "/api/health") {
-            let healthy = self.check_db(instance);
-            return self.return_json(
-                healthy,
-                response);
-
-        } else if url_matches(&request, Method::Get, "/api/info") {
-            let server_info = self.server_info(&instance);
-            return self.return_json(server_info,
-                                    response);
-        }
-
-        // all other requests require a client cert
-        let user = match authenticate_request(&instance, &request) {
-            Ok(user) => user,
-            Err(SecretsError::Authentication(s)) => {
-                return self.return_error(s,
-                                         response,
-                                         StatusCode::Unauthorized);
-            }
-            Err(err) => {
-                error!("error authenticating {:?}", err);
-                return self.return_error("something went wrong",
-                                         response,
-                                         StatusCode::InternalServerError);
-            }
-        };
-
-        if url_matches(&request, Method::Get, "/api/auth") {
-            // this URL only checks that the client can authenticate. they don't
-            // care about the result
-            let healthy = self.check_db(instance);
-            return self.return_json(
-                healthy,
-                response);
-        }
-
-        return self.return_error(
-            "unknown URL",
-            response,
-            StatusCode::NotFound);
     }
 }
 
@@ -155,7 +342,7 @@ fn authenticate_request(instance: &SecretsServer, request: &Request) -> Result<U
             (cn.to_string(), utils::hex(&fingerprint))
         },
         _ => {
-            return return Err(SecretsError::Authentication("malformed client cert"));
+            return Err(SecretsError::Authentication("malformed client cert"));
         }
     };
 
@@ -163,7 +350,7 @@ fn authenticate_request(instance: &SecretsServer, request: &Request) -> Result<U
     return Ok(user);
 }
 
-fn _verify(_preverify_ok: bool, _ctx: &X509StoreContext) -> bool {
+fn pretend_verify(_preverify_ok: bool, _ctx: &X509StoreContext) -> bool {
     // we need to set this callback in order for openssl to request the client
     // cert, but we don't verify it here
     return true;
@@ -171,7 +358,9 @@ fn _verify(_preverify_ok: bool, _ctx: &X509StoreContext) -> bool {
 
 fn make_ssl(instance: &mut SecretsServer) -> Result<Openssl, SecretsError> {
     let mut ssl_context = try!(SslContext::new(SslMethod::Tlsv1));
-    ssl_context.set_verify(SSL_VERIFY_PEER, Some(_verify));
+    ssl_context.set_verify(SSL_VERIFY_PEER, Some(pretend_verify));
+    ssl_context.set_options(SSL_OP_NO_SSLV2 | SSL_OP_NO_SSLV3 | SSL_OP_NO_COMPRESSION);
+    try!(ssl_context.set_cipher_list("ALL!EXPORT!EXPORT40!EXPORT56!aNULL!LOW!RC4@STRENGTH"));
     let (public_pem, private_pem) = try!(instance.get_pems());
     try!(ssl_context.set_certificate(&public_pem));
     try!(ssl_context.set_private_key(&private_pem));
@@ -186,7 +375,7 @@ pub fn listen(mut instance: SecretsServer, listen: &str) -> Result<(), SecretsEr
     let mutexed_instance = Arc::new(Mutex::new(instance));
     let server_handler = ServerHandler {instance: mutexed_instance};
     try!(hyper_server.handle(server_handler));
-    info!("terminating");
+    info!("terminating (hyper_server.handle returned)");
     Ok(())
 }
 
@@ -200,4 +389,30 @@ fn url_matches(request: &Request, method: Method, prefix: &str) -> bool {
         }
         _ => false
     }
+}
+
+fn get_query_params(request: &Request) -> HashMap<String, Vec<String>> {
+    let mut ret = HashMap::new();
+
+    let uri = match request.uri {
+        RequestUri::AbsolutePath(ref x) => x,
+        _ => {
+            return ret;
+        }
+    };
+
+    if !uri.contains("?") {
+        return ret;
+    }
+
+    let params = uri.splitn(2, "?").nth(1).unwrap();
+
+    for (ref key, ref value) in parse_qs(params.as_bytes()) {
+        let key = key.to_string();
+        let value = value.to_string();
+        let vec = ret.entry(key).or_insert_with(|| vec![]);
+        (*vec).push(value);
+    }
+
+    return ret;
 }

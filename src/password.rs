@@ -1,11 +1,11 @@
 use std::env;
+use std::fs;
 use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::io::Write;
-use std::os::unix::io::FromRawFd;
-use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::io::FromRawFd;
 use std::process::Command;
 use std::string;
 
@@ -107,9 +107,15 @@ pub fn evaluate_password_source(source: PasswordSource) -> Result<String, Passwo
             let mut permissions = md.permissions();
             permissions.set_mode(0o600);
             try!(fs::set_permissions(tfile.path(), permissions));
-            // does this allow spaces in `editor`, like `vi -S`?
-            let mut child = try!(Command::new(editor)
-                .arg(tfile.path())
+
+            // use the shell to execute the editor
+            let tfile_path = try!(tfile.path().to_str()
+                .ok_or(PasswordError::Editor("couldn't destr the tempfile name?")));
+            let command = format!("{} {}", editor, tfile_path);
+            let mut child = try!(
+                Command::new("/bin/sh")
+                .arg("-e")
+                .arg(command)
                 .spawn());
             let ecode = try!(child.wait());
             if !ecode.success() {

@@ -1,21 +1,21 @@
-use std::path::{PathBuf, Path};
+use std::fs::File;
 use std::io;
-use std::process::exit;
 use std::io::{Read, Write};
 use std::os::unix::ffi::OsStrExt;
-use std::fs::File;
+use std::path::PathBuf;
+use std::process::exit;
 
-use env_logger;
 use clap::{Arg, App, AppSettings, SubCommand};
-use sodiumoxide;
+use env_logger;
 use openssl::ssl::init as init_openssl;
+use sodiumoxide;
 
-use password;
-use utils;
-use server::server;
-use server::listener;
 use client::client_cmd::PASSWORD_SOURCE_HELP;
 use common::SecretsContainer;
+use password;
+use server::listener;
+use server::server;
+use utils;
 
 pub fn main() {
     let matches = App::new("secrets-server")

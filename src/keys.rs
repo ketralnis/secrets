@@ -1,12 +1,12 @@
 use std::io;
 use std::io::{Read, Write};
 
+use byteorder::{NetworkEndian, WriteBytesExt, ReadBytesExt};
 use sodiumoxide::crypto::auth;
 use sodiumoxide::crypto::box_;
-use sodiumoxide::crypto::sign;
-use sodiumoxide::crypto::secretbox;
 use sodiumoxide::crypto::pwhash;
-use byteorder::{NetworkEndian, WriteBytesExt, ReadBytesExt};
+use sodiumoxide::crypto::secretbox;
+use sodiumoxide::crypto::sign;
 
 quick_error! {
     #[derive(Debug)]

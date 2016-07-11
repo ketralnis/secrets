@@ -4,27 +4,30 @@ use std::path::Path;
 use std::sync::Arc;
 
 use hyper;
+use hyper::method::Method;
 use hyper::net::HttpsConnector;
+use hyper::net::Openssl;
 use hyper::status::StatusCode;
-use openssl::ssl::SslContext;
-use openssl::ssl::SslMethod;
-use openssl::ssl::{SSL_VERIFY_NONE, SSL_VERIFY_PEER, SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
-use openssl::x509::X509StoreContext;
+use hyper::Url;
 use openssl::crypto::hash::Type as HashType;
 use openssl::nid::Nid;
-use hyper::net::Openssl;
+use openssl::ssl::{SSL_VERIFY_NONE, SSL_VERIFY_PEER, SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
+use openssl::ssl::SslContext;
+use openssl::ssl::SslMethod;
+use openssl::x509::X509StoreContext;
 use rusqlite;
-use serde_json::builder::ObjectBuilder;
-use serde_json::ser::to_string as json_to_string;
-use serde_json::from_reader as json_from_reader;
-use serde_json::Value as JsonValue;
-use rustc_serialize::base64::ToBase64;
 use rustc_serialize::base64::STANDARD as STANDARD_BASE64_CONFIG;
+use rustc_serialize::base64::ToBase64;
+use serde_json::builder::ObjectBuilder;
+use serde_json::from_reader as json_from_reader;
+use serde_json::ser::to_string as json_to_string;
+use serde_json::Value as JsonValue;
+use url::form_urlencoded::Serializer as QueryStringSerializer;
 
-use utils;
 use common;
-use common::SecretsError;
 use common::SecretsContainer;
+use common::SecretsError;
+use utils;
 
 pub struct SecretsClient {
     db: rusqlite::Connection,
@@ -66,10 +69,14 @@ impl SecretsClient {
         }
         let got_json: JsonValue = try!(json_from_reader(response));
 
-        let server_fingerprint = try!(common::json_get_string(&got_json, "server_fingerprint"));
-        let server_cn = try!(common::json_get_string(&got_json, "server_cn"));
-        let server_public_sign = try!(common::json_get_string(&got_json, "server_public_sign"));
-        let server_public_key = try!(common::json_get_string(&got_json, "server_public_key"));
+        // TODO should we deserialise this to into the listener::ServerInfo struct?
+        let server_info = try!(got_json.as_object()
+            .and_then(|obj| obj.get("server_info"))
+            .ok_or(SecretsError::ServerError("missing server_info".to_string())));
+        let server_fingerprint = try!(common::json_get_string(&server_info, "server_fingerprint"));
+        let server_cn = try!(common::json_get_string(&server_info, "server_cn"));
+        let server_public_sign = try!(common::json_get_string(&server_info, "server_public_sign"));
+        let server_public_key = try!(common::json_get_string(&server_info, "server_public_key"));
 
         try!(io::stderr().write("connected to server\n".as_bytes()));
         try!(io::stderr().write(format!("server fingerprint: {}\n", server_fingerprint).as_bytes()));
@@ -103,7 +110,7 @@ impl SecretsClient {
         return Ok(client);
     }
 
-    pub fn generate_join_request(&mut self) -> Result<String, SecretsError> {
+    pub fn generate_join_request(&self) -> Result<String, SecretsError> {
         info!("creating join request");
 
         let server_fingerprint = try!(self.get_global::<String>("server_fingerprint"));
@@ -132,12 +139,14 @@ impl SecretsClient {
     }
 
     pub fn check_server(&self) -> Result<(), SecretsError> {
-        let json_response = try!(self.server_get("/api/auth"));
+        let req = SecretsRequest::new(Method::Get, "/api/auth");
+        let json_response = try!(self.server_request(req));
+        // TODO this isn't a good thing to check (and doesn't even work)
         try!(common::json_get_string(&json_response, "healthy"));
         return Ok(());
     }
 
-    fn server_get(&self, endpoint: &str) -> Result<JsonValue, SecretsError> {
+    fn server_request(&self, req: SecretsRequest) -> Result<JsonValue, SecretsError> {
         // set up the SSL verifier to check the fingerprint
         let (public_pem, private_pem) = try!(self.get_pems());
         let mut ssl_context = try!(SslContext::new(SslMethod::Tlsv1));
@@ -158,9 +167,30 @@ impl SecretsClient {
         let connector = HttpsConnector::new(ssl);
         let http_client = hyper::Client::with_connector(connector);
         let host = try!(self.get_global::<String>("server_host"));
-        let url = http_path(&host, endpoint);
-        debug!("connecting to {}", url);
-        let response = try!(http_client.get(&url).send());
+
+        let mut url = try!(Url::parse(&http_path(&host, req.path)));
+
+        let response = try!(match (req.method, req.json) {
+            (Method::Get, None) => {
+                let mut qss = QueryStringSerializer::new(String::new());
+                qss.extend_pairs(&req.arguments);
+                let qss = qss.finish();
+                url.set_query(Some(&qss));
+                let request_builder = http_client.get(url);
+                request_builder.send()
+            },
+            (Method::Post, None) => {
+                http_client.post(url).send()
+            }
+            (Method::Post, Some(json_value)) => {
+                let json_str = try!(json_to_string(&json_value));
+                http_client.post(url)
+                    .body(json_str.as_bytes())
+                    .send()
+            },
+            _ => unreachable!()
+        });
+
         if response.status != StatusCode::Ok {
             return Err(SecretsError::ServerError(format!(
                 "got an error from the server: {}",
@@ -175,7 +205,7 @@ impl SecretsClient {
 
     pub fn connect<P: AsRef<Path>>(config_file: P, password: String) -> Result<Self, SecretsError> {
         let db = try!(common::connect_db(config_file));
-        let mut client = SecretsClient {
+        let client = SecretsClient {
             db: db,
             password: password,
         };
@@ -184,9 +214,24 @@ impl SecretsClient {
         return Ok(client);
     }
 
-    fn username(&mut self) -> Result<String, SecretsError> {
+    pub fn username(&self) -> Result<String, SecretsError> {
         let username = try!(self.get_global::<String>("username"));
         return Ok(username);
+    }
+
+    pub fn create_service(&mut self,
+                          service_name: String,
+                          plaintext: String,
+                          grantees: Vec<String>)
+                          -> Result<(), SecretsError> {
+        let mut req = SecretsRequest::new(Method::Get, "/api/user");
+        for grantee in grantees {
+            req.add_arg("user", grantee);
+        }
+        let json = try!(self.server_request(req));
+        println!("{}", "json");
+        unreachable!();
+        Ok(())
     }
 }
 
@@ -196,6 +241,34 @@ fn http_path(host_str: &String, postfix: &str) -> String {
     ret.push_str(&host_str);
     ret.push_str(postfix);
     ret
+}
+
+struct SecretsRequest {
+    method: Method,
+    path: &'static str,
+    arguments: Vec<(&'static str, String)>,
+    json: Option<JsonValue>,
+}
+
+impl SecretsRequest {
+    fn new(method: Method, path: &'static str) -> Self {
+        SecretsRequest {
+            method: method,
+            path: path,
+            arguments: Vec::new(),
+            json: None
+        }
+    }
+
+    fn add_arg(&mut self, name: &'static str, value: String) -> &mut Self {
+        self.arguments.push((name, value));
+        return self;
+    }
+
+    fn set_json(&mut self, value: JsonValue) -> &mut Self {
+        self.json = Some(value);
+        return self;
+    }
 }
 
 /// SSL verifier callback function that accepts any certificate, but records the
