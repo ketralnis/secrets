@@ -50,6 +50,8 @@ pub fn main() {
                 .takes_value(true)
                 .required(true)))
         .subcommand(SubCommand::with_name("check-server"))
+        .subcommand(SubCommand::with_name("client-info")
+            .about("show info about the server"))
         .subcommand(SubCommand::with_name("create")
             .arg(Arg::with_name("service_name")
                 .index(1)
@@ -130,9 +132,10 @@ pub fn main() {
         let host = subargs.value_of("host").unwrap().to_string();
         let client = client::SecretsClient::create(config_file, host,
                                                    username, pw).unwrap();
-        let request_payload = client.generate_join_request().unwrap();
+        let jr = client.join_request().unwrap();
         io::stderr().write("Send this to your friendly local secrets admin:\n".as_bytes()).unwrap();
-        io::stdout().write(request_payload.as_bytes()).unwrap();
+        let pastable = jr.to_pastable().unwrap();
+        io::stdout().write(pastable.as_bytes()).unwrap();
         io::stdout().write("\n".as_bytes()).unwrap();
         exit(0);
     }
@@ -158,6 +161,10 @@ pub fn main() {
                                     secret_value.to_owned(),
                                     grantees).unwrap();
             exit(0);
+        }
+        ("client-info", Some(_)) => {
+            let client_info = instance.get_peer_info().unwrap();
+            println!("=== client info: ===\n{}", client_info.printable_report());
         }
         _ => unreachable!()
     }

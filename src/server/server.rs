@@ -1,16 +1,11 @@
-use std::io;
-use std::io::Write;
 use std::path::Path;
 
 use rusqlite;
-use rustc_serialize::base64::FromBase64;
-use serde_json::from_slice as json_from_slice;
-use serde_json::Value as JsonValue;
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
 use time;
 
-use api::{User, Service, Grant};
+use api::{User, Service, Grant, JoinRequest, PeerInfo};
 use common;
 use common::SecretsContainer;
 use common::SecretsError;
@@ -45,71 +40,26 @@ impl SecretsServer {
     }
 
     /// (called interactively)
-    pub fn accept_join(&mut self, payload: &[u8]) -> Result<User, SecretsError> {
-        let json_str = match payload.from_base64() {
-            Err(_) => {
-                return Err(SecretsError::Authentication("bad base64"));
-            },
-            Ok(json_str) => json_str
-        };
-        let got_json: JsonValue = try!(json_from_slice(&json_str));
-
-        let attested_server_fingerprint = try!(common::json_get_string(&got_json, "server_fingerprint"));
-        if attested_server_fingerprint != try!(self.ssl_fingerprint()) {
-            return Err(SecretsError::Authentication("wrong server_fingerprint"));
+    pub fn accept_join(&mut self, jr: JoinRequest) -> Result<User, SecretsError> {
+        if jr.server_info != try!(self.get_peer_info()) {
+            return Err(SecretsError::Authentication("server_info doesn't match"));
         }
 
-        let attested_server_cn = try!(common::json_get_string(&got_json, "server_cn"));
-        if attested_server_cn != try!(self.ssl_cn()) {
-            return Err(SecretsError::Authentication("wrong server_cn"));
-        }
-
-        let attested_server_public_key = try!(common::json_get_string(&got_json, "server_public_key"));
-        let (public_key, _) = try!(self.get_keys());
-        if attested_server_public_key != utils::hex(public_key.as_ref()) {
-            return Err(SecretsError::Authentication("wrong server_public_key"));
-        }
-
-        let attested_server_public_sign = try!(common::json_get_string(&got_json, "server_public_sign"));
-        let (public_sign, _) = try!(self.get_signs());
-        if attested_server_public_sign != utils::hex(public_sign.as_ref()) {
-            return Err(SecretsError::Authentication("wrong server_public_sign"));
-        }
-
-        let client_username = try!(common::json_get_string(&got_json, "client_username"));
-        let client_fingerprint = try!(common::json_get_string(&got_json, "client_fingerprint"));
-        let client_public_key = try!(common::json_get_string(&got_json, "client_public_key"));
-        let client_public_sign = try!(common::json_get_string(&got_json, "client_public_sign"));
-
-        if try!(self.user_exists(&client_username)) {
+        if try!(self.user_exists(&jr.client_info.cn)) {
             return Err(SecretsError::Authentication("user exists"));
         }
 
-        try!(io::stderr().write(format!("\
-            client_username: {}\n\
-            client_fingerprint: {}\n\
-            client_public_key: {}\n\
-            client_public_sign: {}\n\
-            ",
-            client_username, client_fingerprint,
-            client_public_key, client_public_sign
-        ).as_bytes()));
+        println!("=== client info: ===\n{}", jr.client_info.printable_report());
+
         let accepted = try!(utils::prompt_yn("does that look right? [y/n] "));
         if !accepted {
             return Err(SecretsError::Authentication("refused client authenticator"));
         }
 
-        let client_public_key = try!(
-            utils::unhex(&client_public_key)
-            .and_then(|x| box_::PublicKey::from_slice(&x))
-            .ok_or(keys::CryptoError::CantDecrypt));
-        let client_public_sign = try!(
-            utils::unhex(&client_public_sign)
-            .and_then(|x| sign::PublicKey::from_slice(&x))
-            .ok_or(keys::CryptoError::CantDecrypt));
-
-        let user = try!(self.create_user(client_username, client_fingerprint,
-                                         client_public_key, client_public_sign));
+        let user = try!(self.create_user(jr.client_info.cn,
+                                         jr.client_info.fingerprint,
+                                         jr.client_info.public_key,
+                                         jr.client_info.public_sign));
         info!("created user: {}", user.username);
         return Ok(user);
     }
@@ -271,6 +221,22 @@ impl SecretsServer {
         }
         return Ok(grant);
     }
+
+    pub fn get_peer_info(&self) -> Result<PeerInfo, SecretsError> {
+        // TODO we're really not storing the CN in a global?
+        let cn = try!(self.ssl_cn());
+        let fingerprint = try!(self.ssl_fingerprint());
+
+        let (public_key, _) = try!(self.get_keys());
+        let (public_sign, _) = try!(self.get_signs());
+
+        return Ok(PeerInfo {
+            cn: cn,
+            fingerprint: fingerprint,
+            public_key: public_key,
+            public_sign: public_sign,
+        });
+    }
 }
 
 impl SecretsContainer for SecretsServer {
@@ -282,8 +248,6 @@ impl SecretsContainer for SecretsServer {
         return &self.password;
     }
 }
-
-
 
 fn create_server_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error> {
     try!(conn.execute_batch("

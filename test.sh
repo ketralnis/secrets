@@ -15,7 +15,7 @@ export RUST_LOG=debug
 SERVER="./target/debug/secrets-server -d ./tmp/server.db"
 
 $SERVER init -n $(hostname)
-$SERVER info
+$SERVER server-info
 
 $SERVER server &
 SERVER_PID=$!
@@ -43,6 +43,8 @@ for new_user in dking florence; do
     yes | $CLIENT join -u $new_user -h $(hostname):4430 > tmp/$new_user.request
     cat tmp/$new_user.request
     sqlite3 tmp/$new_user.db .dump
+
+    $CLIENT client-info
 
     echo "checking if we're accepted (this should fail)"
     ! $CLIENT check-server

@@ -16,17 +16,18 @@ use openssl::ssl::SslContext;
 use openssl::ssl::SslMethod;
 use openssl::x509::X509StoreContext;
 use rusqlite;
-use rustc_serialize::base64::STANDARD as STANDARD_BASE64_CONFIG;
-use rustc_serialize::base64::ToBase64;
-use serde_json::builder::ObjectBuilder;
-use serde_json::from_reader as json_from_reader;
+use serde_json::from_reader as dejson_from_reader;
 use serde_json::ser::to_string as json_to_string;
 use serde_json::Value as JsonValue;
+use sodiumoxide::crypto::box_;
+use sodiumoxide::crypto::sign;
 use url::form_urlencoded::Serializer as QueryStringSerializer;
 
+use api::{ApiResponse, PeerInfo, JoinRequest};
 use common;
 use common::SecretsContainer;
 use common::SecretsError;
+use keys;
 use utils;
 
 pub struct SecretsClient {
@@ -65,24 +66,16 @@ impl SecretsClient {
         info!("connecting to {}", info_url);
         let response = try!(http.get(&info_url).send());
         if response.status != hyper::Ok {
-            return Err(SecretsError::ServerError(format!("unknown status {}", response.status)))
+            return Err(SecretsError::ClientError(format!("unknown status {}", response.status)))
         }
-        let got_json: JsonValue = try!(json_from_reader(response));
 
-        // TODO should we deserialise this to into the listener::ServerInfo struct?
-        let server_info = try!(got_json.as_object()
-            .and_then(|obj| obj.get("server_info"))
-            .ok_or(SecretsError::ServerError("missing server_info".to_string())));
-        let server_fingerprint = try!(common::json_get_string(&server_info, "server_fingerprint"));
-        let server_cn = try!(common::json_get_string(&server_info, "server_cn"));
-        let server_public_sign = try!(common::json_get_string(&server_info, "server_public_sign"));
-        let server_public_key = try!(common::json_get_string(&server_info, "server_public_key"));
+        let api_response: ApiResponse = try!(dejson_from_reader(response));
+        let server_info = try!(api_response.server_info.ok_or(
+            SecretsError::ClientError("missing server info".to_string())));
 
-        try!(io::stderr().write("connected to server\n".as_bytes()));
-        try!(io::stderr().write(format!("server fingerprint: {}\n", server_fingerprint).as_bytes()));
-        try!(io::stderr().write(format!("server cn: {}\n", server_cn).as_bytes()));
-        try!(io::stderr().write(format!("server public_key: {}\n", server_public_key).as_bytes()));
-        try!(io::stderr().write(format!("server public_sign: {}\n", server_public_sign).as_bytes()));
+        try!(io::stderr().write(format!("=== server info: ===\n{}\n",
+                                        server_info.printable_report())
+                                    .as_bytes()));
 
         let confirmed = try!(utils::prompt_yn("does that look right? [y/n] "));
         if !confirmed {
@@ -102,51 +95,71 @@ impl SecretsClient {
         try!(client.create_and_store_keys(&username));
         try!(client.set_global("username", &username));
         try!(client.set_global("server_host", &host));
-        try!(client.set_global("server_fingerprint", &server_fingerprint));
-        try!(client.set_global("server_cn", &server_cn));
-        try!(client.set_global("server_public_key", &server_public_key));
-        try!(client.set_global("server_public_sign", &server_public_sign));
+        try!(client.set_global("server_fingerprint", &server_info.fingerprint));
+        try!(client.set_global("server_cn", &server_info.cn));
+        try!(client.set_global("server_public_key", &server_info.public_key.as_ref()));
+        try!(client.set_global("server_public_sign", &server_info.public_sign.as_ref()));
 
         return Ok(client);
     }
 
-    pub fn generate_join_request(&self) -> Result<String, SecretsError> {
+    pub fn join_request(&self) -> Result<JoinRequest, SecretsError> {
         info!("creating join request");
 
-        let server_fingerprint = try!(self.get_global::<String>("server_fingerprint"));
-        let server_cn = try!(self.get_global::<String>("server_cn"));
-        let server_public_key = try!(self.get_global::<String>("server_public_key"));
-        let server_public_sign = try!(self.get_global::<String>("server_public_sign"));
+        let server_info = try!(self.get_server_info());
+        let client_info = try!(self.get_peer_info());
+        let join_request = JoinRequest {
+            server_info: server_info,
+            client_info: client_info
+        };
+        return Ok(join_request);
+    }
 
-        let username = try!(self.username());
-        let client_fingerprint = try!(self.ssl_fingerprint());
-        let client_public_key = try!(self.get_global::<Vec<u8>>("public_key"));
-        let client_public_sign = try!(self.get_global::<Vec<u8>>("public_sign"));
+    pub fn get_server_info(&self) -> Result<PeerInfo, SecretsError> {
+        let cn = try!(self.get_global::<String>("server_cn"));
+        let fingerprint = try!(self.get_global::<String>("server_fingerprint"));
 
-        let requester_value = ObjectBuilder::new()
-            .insert("server_fingerprint", server_fingerprint)
-            .insert("server_cn", server_cn)
-            .insert("server_public_key", server_public_key)
-            .insert("server_public_sign", server_public_sign)
-            .insert("client_username", username)
-            .insert("client_fingerprint", client_fingerprint)
-            .insert("client_public_key", utils::hex(&client_public_key))
-            .insert("client_public_sign", utils::hex(&client_public_sign))
-            .unwrap();
-        let js = try!(json_to_string(&requester_value));
-        let b64 = js.as_bytes().to_base64(STANDARD_BASE64_CONFIG);
-        return Ok(b64);
+        let public_key_vec: Vec<u8> = try!(self.get_global("server_public_key"));
+        let public_key = box_::PublicKey::from_slice(&public_key_vec);
+        let public_key = try!(public_key.ok_or(keys::CryptoError::Unknown));
+
+        let public_sign_vec: Vec<u8> = try!(self.get_global("server_public_sign"));
+        let public_sign = sign::PublicKey::from_slice(&public_sign_vec);
+        let public_sign = try!(public_sign.ok_or(keys::CryptoError::Unknown));
+
+        return Ok(PeerInfo {
+            cn: cn, fingerprint: fingerprint,
+            public_key: public_key,
+            public_sign: public_sign,
+        });
+    }
+
+    pub fn get_peer_info(&self) -> Result<PeerInfo, SecretsError> {
+        let cn = try!(self.username());
+        let fingerprint = try!(self.ssl_fingerprint());
+
+        let (public_key, _) = try!(self.get_keys());
+        let (public_sign, _) = try!(self.get_signs());
+
+        return Ok(PeerInfo {
+            cn: cn,
+            fingerprint: fingerprint,
+            public_key: public_key,
+            public_sign: public_sign,
+        });
     }
 
     pub fn check_server(&self) -> Result<(), SecretsError> {
         let req = SecretsRequest::new(Method::Get, "/api/auth");
-        let json_response = try!(self.server_request(req));
-        // TODO this isn't a good thing to check (and doesn't even work)
-        try!(common::json_get_string(&json_response, "healthy"));
+        let api_response = try!(self.server_request(req));
+        let username = try!(self.username());
+        if !api_response.users.iter().any(|u| u.username == username) {
+            return Err(SecretsError::ClientError("how come I'm not in here?".to_string()));
+        }
         return Ok(());
     }
 
-    fn server_request(&self, req: SecretsRequest) -> Result<JsonValue, SecretsError> {
+    fn server_request(&self, req: SecretsRequest) -> Result<ApiResponse, SecretsError> {
         // set up the SSL verifier to check the fingerprint
         let (public_pem, private_pem) = try!(self.get_pems());
         let mut ssl_context = try!(SslContext::new(SslMethod::Tlsv1));
@@ -192,15 +205,15 @@ impl SecretsClient {
         });
 
         if response.status != StatusCode::Ok {
-            return Err(SecretsError::ServerError(format!(
+            return Err(SecretsError::ClientError(format!(
                 "got an error from the server: {}",
                 response.status)));
         }
-        let json_response: JsonValue = try!(json_from_reader(response));
-        if !json_response.is_object() {
-            return Err(SecretsError::ServerResponseError("got a non-object from the server".to_string()));
+        let api_response: ApiResponse = try!(dejson_from_reader(response));
+        if let Some(err) = api_response.error {
+            return Err(SecretsError::ClientError(err));
         }
-        return Ok(json_response);
+        return Ok(api_response);
     }
 
     pub fn connect<P: AsRef<Path>>(config_file: P, password: String) -> Result<Self, SecretsError> {
@@ -235,10 +248,10 @@ impl SecretsClient {
     }
 }
 
-fn http_path(host_str: &String, postfix: &str) -> String {
+fn http_path(host_str: &str, postfix: &str) -> String {
     let mut ret = String::new();
     ret.push_str("https://");
-    ret.push_str(&host_str);
+    ret.push_str(host_str);
     ret.push_str(postfix);
     ret
 }
@@ -271,9 +284,9 @@ impl SecretsRequest {
     }
 }
 
-/// SSL verifier callback function that accepts any certificate, but records the
-/// cn/fingerprint
-pub fn verify_fingerprint(_preverify_ok: bool, x509_ctx: &X509StoreContext, expected_values: &(String, String)) -> bool {
+pub fn verify_fingerprint(_preverify_ok: bool,
+                          x509_ctx: &X509StoreContext,
+                          expected_values: &(String, String)) -> bool {
     let (ref expected_fingerprint, ref expected_cn) = *expected_values;
 
     let pem = x509_ctx.get_current_cert();

@@ -17,14 +17,10 @@ use openssl::ssl::SslContext;
 use openssl::ssl::SslMethod;
 use openssl::ssl::SslStream;
 use openssl::x509::X509StoreContext;
-use serde_json::builder::ObjectBuilder;
 use serde_json::ser::to_string as json_to_string;
-use serde_json::value::Value as JsonValue;
-use sodiumoxide::crypto::box_;
-use sodiumoxide::crypto::sign;
 use url::form_urlencoded::parse as parse_qs;
 
-use api::{User, Service, Grant, ServerInfo, ApiResponse};
+use api::{User, Service, Grant, PeerInfo, ApiResponse};
 use common::SecretsContainer;
 use common::SecretsError;
 use server::server::SecretsServer;
@@ -44,23 +40,23 @@ impl ServerHandler {
 
         if url_matches(&request, Method::Get, "/api/health") {
             try!(instance.check_db());
-            api.set_healthy(true);
+            api.healthy = Some(true);
             return Ok((StatusCode::Ok, api));
         }
 
         if url_matches(&request, Method::Get, "/api/info") {
-            let server_cn = try!(instance.ssl_cn());
-            let server_fingerprint = try!(instance.ssl_fingerprint());
+            let cn = try!(instance.ssl_cn());
+            let fingerprint = try!(instance.ssl_fingerprint());
             let (public_key, _) = try!(instance.get_keys());
             let (public_sign, _) = try!(instance.get_signs());
 
-            let server_info = ServerInfo {
-                server_cn: server_cn,
-                server_fingerprint: server_fingerprint,
-                server_public_key: public_key,
-                server_public_sign: public_sign,
+            let server_info = PeerInfo {
+                cn: cn,
+                fingerprint: fingerprint,
+                public_key: public_key,
+                public_sign: public_sign,
             };
-            api.set_server_info(server_info);
+            api.server_info = Some(server_info);
             return Ok((StatusCode::Ok, api));
         }
 
@@ -71,7 +67,7 @@ impl ServerHandler {
         if url_matches(&request, Method::Get, "/api/auth") {
             // this URL only checks that the client can authenticate. they don't
             // really care about the result
-            api.add_user(user);
+            api.users.push(user);
             return Ok((StatusCode::Ok, api));
         }
 
@@ -95,9 +91,7 @@ impl ServerHandler {
                       status_code: StatusCode,
                       api: ApiResponse,
                       mut response: Response) -> Result<(), SecretsError> {
-        let j_value = api.to_response();
-
-        match json_to_string(&j_value) {
+        match json_to_string(&api) {
             Ok(value_str) => {
                 *response.status_mut() = status_code;
                 try!(response.send(value_str.as_bytes()));

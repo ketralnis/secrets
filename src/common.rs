@@ -18,7 +18,6 @@ use rusqlite;
 use rusqlite::types::FromSql;
 use rusqlite::types::ToSql;
 use serde_json::Error as SerdeError;
-use serde_json::Value as JsonValue;
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
 use time;
@@ -38,9 +37,8 @@ quick_error! {
         Parse(err: ParseError) {from()}
         Io(err: io::Error) {from()}
         Json(err: SerdeError) {from()}
-        ServerError(err: String) {} // client had a problem communicating with server
-        ServerResponseError(err: String) {} // client didn't like something the server sent
-        ClientError(err: String) {} // server didn't like something the client sent
+        ServerError(err: String) {} // server didn't like something the client did
+        ClientError(err: String) {} // client didn't like something the server did
         Authentication(err: &'static str) {}
         Unknown(err: &'static str) {}
     }
@@ -243,26 +241,5 @@ pub trait SecretsContainer {
             VALUES(?, ?, ?, 1)",
             &[&key_name, &ciphertext, &time::get_time().sec]));
         return Ok(())
-    }
-}
-
-pub fn json_get_string(value: &JsonValue, name: &str) -> Result<String, SecretsError> {
-    if !value.is_object() {
-        return Err(SecretsError::ServerResponseError("is not an object".to_string()));
-    }
-    match value.as_object().unwrap().get(name) {
-        Some(v) if v.is_string() => {
-            Ok(v.as_string().unwrap().to_string())
-        }
-        Some(_) => {
-            let error_msg = format!("wrong type for {}",
-                                    name);
-            Err(SecretsError::ServerResponseError(error_msg))
-        }
-        None => {
-            let error_msg = format!("missing vital {}",
-                                    name);
-            Err(SecretsError::ServerResponseError(error_msg))
-        }
     }
 }

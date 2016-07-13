@@ -10,8 +10,8 @@ use env_logger;
 use openssl::ssl::init as init_openssl;
 use sodiumoxide;
 
+use api::JoinRequest;
 use client::client_cmd::PASSWORD_SOURCE_HELP;
-use common::SecretsContainer;
 use password;
 use server::listener;
 use server::server;
@@ -53,7 +53,7 @@ pub fn main() {
                 .index(1)
                 .takes_value(true)
                 .required(true)))
-        .subcommand(SubCommand::with_name("info")
+        .subcommand(SubCommand::with_name("server-info")
             .about("show info about the server"))
         .get_matches();
 
@@ -79,8 +79,9 @@ pub fn main() {
         }
         let cn = subargs.value_of("name").unwrap().to_string();
         let instance = server::SecretsServer::create(config_file, cn, pw).unwrap();
-        let fingerprint = instance.ssl_fingerprint().unwrap();
-        println!("created server with fingerprint {}", fingerprint);
+        // let fingerprint = instance.ssl_fingerprint().unwrap();
+        let server_info = instance.get_peer_info().unwrap();
+        println!("=== created server: ===\n{}", server_info.printable_report());
         return;
     }
 
@@ -98,22 +99,27 @@ pub fn main() {
             let listen = subargs.value_of("listen").unwrap();
             listener::listen(instance, listen).unwrap()
         },
-        ("info", _) => {
-            let fingerprint = instance.ssl_fingerprint().unwrap();
-            println!("ssl fingerprint: {}", fingerprint);
-            let cn = instance.ssl_cn().unwrap();
-            println!("ssl common name: {}", cn);
-            let (public_key, _) = instance.get_keys().unwrap();
-            println!("public key: {}", utils::hex(public_key.as_ref()));
-            let (public_sign, _) = instance.get_signs().unwrap();
-            println!("public sign: {}", utils::hex(public_sign.as_ref()));
+        ("server-info", _) => {
+            let server_info = instance.get_peer_info().unwrap();
+
+            println!("=== server info: ===\n{}", server_info.printable_report());
+
+            // let fingerprint = instance.ssl_fingerprint().unwrap();
+            // println!("ssl fingerprint: {}", fingerprint);
+            // let cn = instance.ssl_cn().unwrap();
+            // println!("ssl common name: {}", cn);
+            // let (public_key, _) = instance.get_keys().unwrap();
+            // println!("public key: {}", utils::hex(public_key.as_ref()));
+            // let (public_sign, _) = instance.get_signs().unwrap();
+            // println!("public sign: {}", utils::hex(public_sign.as_ref()));
         },
         ("accept-join", Some(subargs)) => {
             let filename = subargs.value_of("filename").unwrap();
             let mut payload = String::new();
             let mut file = File::open(filename).unwrap();
             file.read_to_string(&mut payload).unwrap();
-            instance.accept_join(payload.as_bytes()).unwrap();
+            let jr = JoinRequest::from_pastable(payload.as_bytes()).unwrap();
+            instance.accept_join(jr).unwrap();
         }
         _ => unreachable!()
     }
