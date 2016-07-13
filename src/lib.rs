@@ -11,23 +11,25 @@ extern crate rpassword;
 extern crate rusqlite;
 extern crate rustc_serialize;
 extern crate serde_json;
+extern crate serde;
 extern crate sodiumoxide;
 extern crate tempfile;
 extern crate time;
 extern crate url;
 
+mod api;
 mod common;
 mod keys;
 mod password;
 mod utils;
 
 pub mod client {
-    pub mod client_cmd;
     mod client;
+    pub mod client_cmd;
 }
 
 pub mod server {
-    pub mod server_cmd;
     mod listener;
     mod server;
+    pub mod server_cmd;
 }

@@ -10,6 +10,7 @@ use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
 use time;
 
+use api::{User, Service, Grant};
 use common;
 use common::SecretsContainer;
 use common::SecretsError;
@@ -282,88 +283,7 @@ impl SecretsContainer for SecretsServer {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct User {
-    pub username: String,
-    pub public_key: box_::PublicKey,
-    pub public_sign: sign::PublicKey,
-    pub ssl_fingerprint: String,
-    pub created: i64,
-    pub disabled: Option<i64>,
-}
 
-impl User {
-    fn from_row(row: rusqlite::Row) -> Result<Self, SecretsError> {
-        let public_key: Vec<u8> = row.get("public_key");
-        let public_key = try!(box_::PublicKey::from_slice(&public_key.as_ref())
-            .ok_or(keys::CryptoError::CantDecrypt));
-
-        let public_sign: Vec<u8> = row.get("public_sign");
-        let public_sign = try!(sign::PublicKey::from_slice(&public_sign.as_ref())
-            .ok_or(keys::CryptoError::CantDecrypt));
-
-        let u = User {
-            username: row.get("username"),
-            public_key: public_key,
-            public_sign: public_sign,
-            ssl_fingerprint: row.get("ssl_fingerprint"),
-            created: row.get("created"),
-            disabled: row.get("disabled"),
-        };
-        Ok(u)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Service {
-    pub service_name: String,
-    pub created: i64,
-    pub modified: i64,
-    pub creator: String,
-    pub modified_by: String
-}
-
-impl Service {
-    fn from_row(row: rusqlite::Row) -> Result<Self, SecretsError> {
-        let s = Service {
-            service_name: row.get("service_name"),
-            created: row.get("created"),
-            modified: row.get("modified"),
-            creator: row.get("creator"),
-            modified_by: row.get("modified_by"),
-        };
-        Ok(s)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Grant {
-    pub grantee: String,
-    pub grantor: String,
-    pub service_name: String,
-    pub ciphertext: Vec<u8>,
-    pub signature: sign::Signature,
-    pub created: i64,
-}
-
-impl Grant {
-    fn from_row(row: rusqlite::Row) -> Result<Self, SecretsError> {
-        let sig: Vec<u8> = row.get("signature");
-        let signature = try!(
-            sign::Signature::from_slice(&sig)
-            .ok_or(keys::CryptoError::CantDecrypt));
-
-        let u = Grant {
-            grantee: row.get("grantee"),
-            grantor: row.get("grantor"),
-            service_name: row.get("service_name"),
-            ciphertext: row.get("ciphertext"),
-            signature: signature,
-            created: row.get("created"),
-        };
-        Ok(u)
-    }
-}
 
 fn create_server_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error> {
     try!(conn.execute_batch("

@@ -1,0 +1,220 @@
+// API objects that are passed via HTTP, implemented with serde code generation
+// for convenience
+
+use rusqlite;
+use serde_json::builder::ObjectBuilder;
+use serde_json::value::Value as JsonValue;
+use sodiumoxide::crypto::box_;
+use sodiumoxide::crypto::sign;
+
+use common::SecretsError;
+use keys::CryptoError;
+use utils;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct User {
+    pub username: String,
+    pub public_key: box_::PublicKey,
+    pub public_sign: sign::PublicKey,
+    pub ssl_fingerprint: String,
+    pub created: i64,
+    pub disabled: Option<i64>,
+}
+
+impl User {
+    pub fn from_row(row: rusqlite::Row) -> Result<Self, SecretsError> {
+        let public_key: Vec<u8> = row.get("public_key");
+        let public_key = try!(box_::PublicKey::from_slice(&public_key.as_ref())
+            .ok_or(CryptoError::CantDecrypt));
+
+        let public_sign: Vec<u8> = row.get("public_sign");
+        let public_sign = try!(sign::PublicKey::from_slice(&public_sign.as_ref())
+            .ok_or(CryptoError::CantDecrypt));
+
+        let u = User {
+            username: row.get("username"),
+            public_key: public_key,
+            public_sign: public_sign,
+            ssl_fingerprint: row.get("ssl_fingerprint"),
+            created: row.get("created"),
+            disabled: row.get("disabled"),
+        };
+        Ok(u)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Service {
+    pub service_name: String,
+    pub created: i64,
+    pub modified: i64,
+    pub creator: String,
+    pub modified_by: String
+}
+
+impl Service {
+    pub fn from_row(row: rusqlite::Row) -> Result<Self, SecretsError> {
+        let s = Service {
+            service_name: row.get("service_name"),
+            created: row.get("created"),
+            modified: row.get("modified"),
+            creator: row.get("creator"),
+            modified_by: row.get("modified_by"),
+        };
+        Ok(s)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Grant {
+    pub grantee: String,
+    pub grantor: String,
+    pub service_name: String,
+    pub ciphertext: Vec<u8>,
+    pub signature: sign::Signature,
+    pub created: i64,
+}
+
+impl Grant {
+    pub fn from_row(row: rusqlite::Row) -> Result<Self, SecretsError> {
+        let sig: Vec<u8> = row.get("signature");
+        let signature = try!(
+            sign::Signature::from_slice(&sig)
+            .ok_or(CryptoError::CantDecrypt));
+
+        let u = Grant {
+            grantee: row.get("grantee"),
+            grantor: row.get("grantor"),
+            service_name: row.get("service_name"),
+            ciphertext: row.get("ciphertext"),
+            signature: signature,
+            created: row.get("created"),
+        };
+        Ok(u)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiResponse {
+    pub healthy: Option<bool>,
+    pub users: Vec<User>,
+    pub services: Vec<Service>,
+    pub grants: Vec<Grant>,
+    pub error: Option<String>,
+    pub server_info: Option<ServerInfo>,
+}
+
+impl ApiResponse {
+    pub fn new() -> Self {
+        ApiResponse {
+            healthy: None,
+            users: vec![],
+            services: vec![],
+            grants: vec![],
+            error: None,
+            server_info: None,
+        }
+    }
+
+    pub fn set_healthy(&mut self, healthy: bool) -> &mut Self {
+        self.healthy = Some(healthy);
+        return self;
+    }
+
+    pub fn set_server_info(&mut self, server_info: ServerInfo) -> &mut Self {
+        self.server_info = Some(server_info);
+        return self;
+    }
+
+    pub fn add_user(&mut self, user: User) -> &mut Self {
+        self.users.push(user);
+        return self;
+    }
+
+    pub fn add_service(&mut self, service: Service) -> &mut Self {
+        self.services.push(service);
+        return self;
+    }
+
+    pub fn add_grant(&mut self, grant: Grant) -> &mut Self {
+        self.grants.push(grant);
+        return self;
+    }
+
+    pub fn to_response(mut self) -> JsonValue {
+        let mut ob = ObjectBuilder::new();
+
+        if let Some(healthy) = self.healthy {
+            ob = ob.insert("healthy", healthy);
+        }
+
+        if let Some(server_info) = self.server_info {
+            ob = ob.insert("server_info", server_info.to_response());
+        }
+
+        if !self.users.is_empty() {
+            let mut j_users = ObjectBuilder::new();
+            for user in self.users.drain(..) {
+                let key = user.username.clone();
+                let j_user = ObjectBuilder::new()
+                    .insert("username", user.username)
+                    .insert("public_key", utils::hex(&user.public_key.as_ref()))
+                    .insert("public_sign", utils::hex(&user.public_sign.as_ref()))
+                    .insert("ssl_fingerprint", user.ssl_fingerprint)
+                    .insert("created", user.created);
+                j_users = j_users.insert(key, j_user.unwrap());
+            }
+            ob = ob.insert("users", j_users.unwrap());
+        }
+        if !self.services.is_empty() {
+            let mut j_services = ObjectBuilder::new();
+            for service in self.services.drain(..) {
+                let key = service.service_name.clone();
+                let j_service = ObjectBuilder::new()
+                    .insert("service_name", service.service_name)
+                    .insert("created", service.created)
+                    .insert("modified", service.modified)
+                    .insert("creator", service.creator)
+                    .insert("modified_by", service.modified_by);
+                j_services = j_services.insert(key, j_service.unwrap());
+            }
+            ob = ob.insert("services", j_services.unwrap());
+        }
+        if !self.grants.is_empty() {
+            let mut j_grants = ObjectBuilder::new();
+            for grant in self.grants.drain(..) {
+                let key = format!("{}/{}", grant.service_name, grant.grantee);
+                let j_grant = ObjectBuilder::new()
+                    .insert("grantee", grant.grantee)
+                    .insert("grantor", grant.grantor)
+                    .insert("service_name", grant.service_name)
+                    .insert("ciphertext", utils::hex(&grant.ciphertext))
+                    .insert("signature", utils::hex(&grant.signature.as_ref()))
+                    .insert("created", grant.created);
+                j_grants = j_grants.insert(key, j_grant.unwrap());
+            }
+            ob = ob.insert("grants", j_grants.unwrap());
+        }
+
+        return ob.unwrap();
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerInfo {
+    pub server_cn: String,
+    pub server_fingerprint: String,
+    pub server_public_key: box_::PublicKey,
+    pub server_public_sign: sign::PublicKey,
+}
+
+impl ServerInfo {
+    pub fn to_response(self) -> JsonValue {
+        return ObjectBuilder::new()
+            .insert("server_cn", self.server_cn)
+            .insert("server_fingerprint", self.server_fingerprint)
+            .insert("server_public_key", utils::hex(&self.server_public_key.as_ref()))
+            .insert("server_public_sign", utils::hex(&self.server_public_sign.as_ref()))
+            .unwrap();
+    }
+}
