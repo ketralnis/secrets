@@ -17,6 +17,7 @@ use openssl::ssl::SslContext;
 use openssl::ssl::SslMethod;
 use openssl::ssl::SslStream;
 use openssl::x509::X509StoreContext;
+use rustc_serialize::hex::ToHex;
 use serde_json::ser::to_string as json_to_string;
 use url::form_urlencoded::parse as parse_qs;
 
@@ -24,7 +25,6 @@ use api::{User, Service, Grant, PeerInfo, ApiResponse};
 use common::SecretsContainer;
 use common::SecretsError;
 use server::server::SecretsServer;
-use utils;
 
 struct ServerHandler {
     instance: Arc<Mutex<SecretsServer>>
@@ -67,21 +67,60 @@ impl ServerHandler {
         if url_matches(&request, Method::Get, "/api/auth") {
             // this URL only checks that the client can authenticate. they don't
             // really care about the result
-            api.users.push(user);
+            api.users.insert(user.username.clone(), user.clone());
             return Ok((StatusCode::Ok, api));
         }
 
         let query_params: HashMap<String, Vec<String>> = get_query_params(&request);
 
-        if url_matches(&request, Method::Get, "/api/user") {
+        if url_matches(&request, Method::Get, "/api/users") {
             let unames = query_params.get("user");
 
             if let Some(unames) = unames {
                 for ref uname in unames {
-                    // TODO we have to actually implement this
-                    println!("user: {:?}", uname);
+                    let user = try!(instance.get_user(uname));
+                    api.users.insert(user.username.clone(), user);
                 }
             }
+            return Ok((StatusCode::Ok, api))
+        }
+
+        if url_matches(&request, Method::Get, "/api/services") {
+            let names = query_params.get("service");
+
+            if let Some(names) = names {
+                for ref name in names {
+                    let service = try!(instance.get_service(name));
+                    api.services.insert(service.name.clone(), service);
+                }
+            }
+            return Ok((StatusCode::Ok, api))
+        }
+
+        if url_matches(&request, Method::Get, "/api/grants") {
+            let names = query_params.get("grant");
+
+            if let Some(names) = names {
+                for ref name in names {
+                    let (service_name, grantee_name) = Grant::split_key(name);
+
+                    let grant = try!(instance.get_grant(&service_name, &grantee_name));
+
+                    // add in the dependent fields
+
+                    let grantee = try!(instance.get_user(&grantee_name));
+                    api.users.insert(grantee.username.clone(), grantee);
+
+                    let grantor = try!(instance.get_user(&grant.grantor));
+                    api.users.insert(grantor.username.clone(), grantor);
+
+                    let service = try!(instance.get_service(&service_name));
+                    api.services.insert(service.name.clone(), service);
+
+                    api.grants.insert(grant.key(), grant);
+                }
+            }
+            return Ok((StatusCode::Ok, api))
         }
 
         return Ok((StatusCode::NotFound, api))
@@ -195,7 +234,7 @@ fn authenticate_request(instance: &SecretsServer, request: &Request) -> Result<U
     let (remote_cn, remote_fingerprint) = match (client_pem.subject_name().text_by_nid(Nid::CN),
                                                  client_pem.fingerprint(HashType::SHA256)) {
         (Some(cn), Some(fingerprint)) => {
-            (cn.to_string(), utils::hex(&fingerprint))
+            (cn.to_string(), fingerprint.to_hex())
         },
         _ => {
             return Err(SecretsError::Authentication("malformed client cert"));

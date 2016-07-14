@@ -17,6 +17,7 @@ use openssl::x509::X509Generator;
 use rusqlite;
 use rusqlite::types::FromSql;
 use rusqlite::types::ToSql;
+use rustc_serialize::hex::ToHex;
 use serde_json::Error as SerdeError;
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
@@ -192,7 +193,7 @@ pub trait SecretsContainer {
         let (public_key, _) = try!(self.get_pems());
         let fingerprint = public_key.fingerprint(HashType::SHA256);
         let fingerprint = try!(fingerprint.ok_or(SecretsError::Unknown("stored cert has no fingerprint")));
-        let fingerprint = utils::hex(&fingerprint);
+        let fingerprint = fingerprint.to_hex();
         return Ok(fingerprint);
     }
 

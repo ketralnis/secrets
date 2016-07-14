@@ -16,6 +16,7 @@ use openssl::ssl::SslContext;
 use openssl::ssl::SslMethod;
 use openssl::x509::X509StoreContext;
 use rusqlite;
+use rustc_serialize::hex::ToHex;
 use serde_json::from_reader as dejson_from_reader;
 use serde_json::ser::to_string as json_to_string;
 use serde_json::Value as JsonValue;
@@ -153,7 +154,7 @@ impl SecretsClient {
         let req = SecretsRequest::new(Method::Get, "/api/auth");
         let api_response = try!(self.server_request(req));
         let username = try!(self.username());
-        if !api_response.users.iter().any(|u| u.username == username) {
+        if !api_response.users.iter().any(|(name, user)| *name == username) {
             return Err(SecretsError::ClientError("how come I'm not in here?".to_string()));
         }
         return Ok(());
@@ -206,8 +207,8 @@ impl SecretsClient {
 
         if response.status != StatusCode::Ok {
             return Err(SecretsError::ClientError(format!(
-                "got an error from the server: {}",
-                response.status)));
+                "got an error from the server ({}): {}",
+                req.path, response.status)));
         }
         let api_response: ApiResponse = try!(dejson_from_reader(response));
         if let Some(err) = api_response.error {
@@ -237,7 +238,7 @@ impl SecretsClient {
                           plaintext: String,
                           grantees: Vec<String>)
                           -> Result<(), SecretsError> {
-        let mut req = SecretsRequest::new(Method::Get, "/api/user");
+        let mut req = SecretsRequest::new(Method::Get, "/api/users");
         for grantee in grantees {
             req.add_arg("user", grantee);
         }
@@ -301,8 +302,7 @@ pub fn verify_fingerprint(_preverify_ok: bool,
         error!("remote had no fingerprint");
         return false
     }
-    let remote_fingerprint = remote_fingerprint.unwrap();
-    let remote_fingerprint = utils::hex(&remote_fingerprint);
+    let remote_fingerprint = remote_fingerprint.unwrap().to_hex();
 
     let cn = pem.subject_name().text_by_nid(Nid::CN);
     if cn.is_none() {

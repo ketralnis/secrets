@@ -82,7 +82,7 @@ impl SecretsServer {
         return Ok(user);
     }
 
-    fn get_user(&self, username: &String) -> Result<User, SecretsError> {
+    pub fn get_user(&self, username: &String) -> Result<User, SecretsError> {
         let user = try!(self.db.query_row_and_then("
                 SELECT username, public_key, public_sign, ssl_fingerprint,
                        created, disabled
@@ -187,7 +187,7 @@ impl SecretsServer {
                     INSERT OR REPLACE INTO grants(grantor, grantee, service_name,
                                                   created, ciphertext, signature)
                     VALUES (?, ?, ?, ?, ?, ?)
-                ", &[&grantor.username, &grantee.username, &service.service_name,
+                ", &[&grantor.username, &grantee.username, &service.name,
                      &now, *ciphertext, &signature.as_ref()]));
             try!(trans.execute("
                     UPDATE services SET modified=?, modified_by=?
@@ -202,17 +202,17 @@ impl SecretsServer {
     }
 
     pub fn get_grant(&self,
-                     service_name: String,
-                     user: &User)
+                     service_name: &String,
+                     grantee_name: &String)
                      -> Result<Grant, SecretsError> {
         let grant = try!(self.db.query_row_and_then("
                 SELECT service_name, grantee, grantor, ciphertext, signature, created
                 FROM grants
                 WHERE service_name = ? AND grantee = ?
              ",
-            &[&service_name, &user.username],
+            &[service_name, grantee_name],
             Grant::from_row));
-        // verify the signature on the grant TODO these can be NULL if it was granted and taken away
+        // verify the signature on the grant
         let grantor = try!(self.get_user(&grant.grantor));
         if !sign::verify_detached(&grant.signature,
                                   &grant.ciphertext,
@@ -341,8 +341,8 @@ mod tests {
                                ]).unwrap();
 
         // now florence should be able to find that and get the grant
-        let grant = server.get_grant("service1".to_string(),
-                                     &florence).unwrap();
+        let grant = server.get_grant(&"service1".to_string(),
+                                     &florence.username).unwrap();
         assert_eq!(grant.ciphertext, "ciphertext".as_bytes().to_vec());
     }
 }

@@ -19,25 +19,6 @@ pub fn re_validator(name: &str, re_expr: &'static str, value: &str)
     }
 }
 
-pub fn hex(bytes: &[u8]) -> String {
-    let strs: Vec<String> = bytes.iter()
-        .map(|b| format!("{:02x}", b))
-        .collect();
-    return strs.join("")
-}
-
-pub fn unhex(from: &str) -> Option<Vec<u8>> {
-    let mut ret = vec![];
-    for start in 0..from.len()/2 {
-        let s = &from[start*2..start*2+1];
-        match u8::from_str_radix(&s, 16) {
-            Ok(ord) => ret.push(ord),
-            Err(_) => return None,
-        }
-    }
-    return Some(ret);
-}
-
 pub fn prompt_yn(prompt: &str) -> io::Result<bool> {
     let mut stderr = io::stderr();
     let stdin = io::stdin();

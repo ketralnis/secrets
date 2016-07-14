@@ -33,3 +33,4 @@ Secrets is a system for safely storing shared passwords between users
 * documentation
   - user level
   - crypto level
+* validation of usernames, service names, etc

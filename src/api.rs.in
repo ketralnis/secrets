@@ -1,10 +1,19 @@
 // API objects that are passed via HTTP, implemented with serde code generation
 // for convenience
 
+// I'm built by build.rs (specified in Cargo.toml)
+
+use std::collections::HashMap;
+use std::io::Cursor;
+use std::io::{Read, Write};
+
+use flate2::Compression;
+use flate2::read::ZlibDecoder;
+use flate2::write::ZlibEncoder;
 use rusqlite;
 use rustc_serialize::base64::{FromBase64, ToBase64};
 use rustc_serialize::base64::STANDARD as STANDARD_BASE64_CONFIG;
-use serde_json;
+use rustc_serialize::hex::ToHex;
 use serde_json::from_slice as json_from_slice;
 use serde_json::ser::to_string as json_to_string;
 use sodiumoxide::crypto::box_;
@@ -12,7 +21,6 @@ use sodiumoxide::crypto::sign;
 
 use common::SecretsError;
 use keys::CryptoError;
-use utils;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -48,7 +56,7 @@ impl User {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Service {
-    pub service_name: String,
+    pub name: String,
     pub created: i64,
     pub modified: i64,
     pub creator: String,
@@ -58,7 +66,7 @@ pub struct Service {
 impl Service {
     pub fn from_row(row: rusqlite::Row) -> Result<Self, SecretsError> {
         let s = Service {
-            service_name: row.get("service_name"),
+            name: row.get("service_name"),
             created: row.get("created"),
             modified: row.get("modified"),
             creator: row.get("creator"),
@@ -95,14 +103,29 @@ impl Grant {
         };
         Ok(u)
     }
+
+    pub fn key(&self) -> String {
+        return Self::make_key(&self.service_name, &self.grantee);
+    }
+
+    pub fn make_key(service_name: &str, grantee: &str) -> String {
+        return format!("{}::{}", service_name, grantee);
+    }
+
+    pub fn split_key(key: &str) -> (String, String) {
+        let splitted: Vec<&str> = key.splitn(2, "::")
+            // .map(|s| s.to_string())
+            .collect();
+        return (splitted[0].to_string(), splitted[1].to_string());
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiResponse {
     pub healthy: Option<bool>,
-    pub users: Vec<User>,
-    pub services: Vec<Service>,
-    pub grants: Vec<Grant>,
+    pub users: HashMap<String, User>,
+    pub services: HashMap<String, Service>,
+    pub grants: HashMap<String, Grant>,
     pub error: Option<String>,
     pub server_info: Option<PeerInfo>,
 }
@@ -111,9 +134,9 @@ impl ApiResponse {
     pub fn new() -> Self {
         ApiResponse {
             healthy: None,
-            users: vec![],
-            services: vec![],
-            grants: vec![],
+            users: HashMap::new(),
+            services: HashMap::new(),
+            grants: HashMap::new(),
             error: None,
             server_info: None,
         }
@@ -137,8 +160,8 @@ impl PeerInfo {
             public key: {}\n\
             public sign: {}",
         self.cn, self.fingerprint,
-        utils::hex(&self.public_key.as_ref()),
-        utils::hex(&self.public_sign.as_ref()));
+        self.public_key.as_ref().to_hex(),
+        self.public_sign.as_ref().to_hex());
     }
 }
 
@@ -149,17 +172,24 @@ pub struct JoinRequest {
 }
 
 impl JoinRequest {
-    pub fn to_pastable(&self) -> Result<String, serde_json::Error> {
+    pub fn to_pastable(&self) -> Result<String, SecretsError> {
         let as_json_string = try!(json_to_string(&self));
-        let b64 = as_json_string.as_bytes().to_base64(STANDARD_BASE64_CONFIG);
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::Best);
+        try!(encoder.write(&as_json_string.as_bytes()));
+        let compressed = try!(encoder.finish());
+        let b64 = compressed.to_base64(STANDARD_BASE64_CONFIG);
         return Ok(b64);
     }
 
     pub fn from_pastable(data: &[u8]) -> Result<Self, SecretsError> {
-        // TODO gzip this, it's huge
-        let json_str = try!(data.from_base64()
+        let unb64d = try!(data.from_base64()
             .map_err(|_| CryptoError::CantDecrypt));
-        let ret: Self = try!(json_from_slice(&json_str));
+        let cursor = Cursor::new(unb64d);
+        let mut decoder = ZlibDecoder::new(cursor);
+        let mut decompressed = Vec::new();
+        try!(decoder.read_to_end(&mut decompressed)
+            .map_err(|_| CryptoError::CantDecrypt));
+        let ret = try!(json_from_slice(&decompressed));
         return Ok(ret);
     }
 }

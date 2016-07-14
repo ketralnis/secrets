@@ -4,6 +4,7 @@
 extern crate byteorder;
 extern crate clap;
 extern crate env_logger;
+extern crate flate2;
 extern crate hyper;
 extern crate openssl;
 extern crate regex;
@@ -17,7 +18,6 @@ extern crate tempfile;
 extern crate time;
 extern crate url;
 
-mod api;
 mod common;
 mod keys;
 mod password;
@@ -32,4 +32,8 @@ pub mod server {
     mod listener;
     mod server;
     pub mod server_cmd;
+}
+
+mod api {
+    include!(concat!(env!("OUT_DIR"), "/api.rs"));
 }
