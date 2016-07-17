@@ -81,7 +81,8 @@ pub fn main() {
         let instance = server::SecretsServer::create(config_file, cn, pw).unwrap();
         // let fingerprint = instance.ssl_fingerprint().unwrap();
         let server_info = instance.get_peer_info().unwrap();
-        println!("=== created server: ===\n{}", server_info.printable_report());
+        println!("=== created server: ===\n{}",
+                 server_info.printable_report().unwrap());
         return;
     }
 
@@ -102,16 +103,8 @@ pub fn main() {
         ("server-info", _) => {
             let server_info = instance.get_peer_info().unwrap();
 
-            println!("=== server info: ===\n{}", server_info.printable_report());
-
-            // let fingerprint = instance.ssl_fingerprint().unwrap();
-            // println!("ssl fingerprint: {}", fingerprint);
-            // let cn = instance.ssl_cn().unwrap();
-            // println!("ssl common name: {}", cn);
-            // let (public_key, _) = instance.get_keys().unwrap();
-            // println!("public key: {}", utils::hex(public_key.as_ref()));
-            // let (public_sign, _) = instance.get_signs().unwrap();
-            // println!("public sign: {}", utils::hex(public_sign.as_ref()));
+            println!("=== server info: ===\n{}",
+                     server_info.printable_report().unwrap());
         },
         ("accept-join", Some(subargs)) => {
             let filename = subargs.value_of("filename").unwrap();

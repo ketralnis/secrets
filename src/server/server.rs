@@ -49,7 +49,8 @@ impl SecretsServer {
             return Err(SecretsError::Authentication("user exists"));
         }
 
-        println!("=== client info: ===\n{}", jr.client_info.printable_report());
+        println!("=== client info: ===\n{}",
+                 try!(jr.client_info.printable_report()));
 
         let accepted = try!(utils::prompt_yn("does that look right? [y/n] "));
         if !accepted {

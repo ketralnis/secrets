@@ -10,14 +10,16 @@ use std::io::{Read, Write};
 use flate2::Compression;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
+use rfc1751::ToRfc1751;
 use rusqlite;
-use rustc_serialize::base64::{FromBase64, ToBase64};
 use rustc_serialize::base64::STANDARD as STANDARD_BASE64_CONFIG;
-use rustc_serialize::hex::ToHex;
+use rustc_serialize::base64::{FromBase64, ToBase64};
+use rustc_serialize::hex::{ToHex, FromHex};
 use serde_json::from_slice as json_from_slice;
 use serde_json::ser::to_string as json_to_string;
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
+use sodiumoxide::crypto::hash::sha256;
 
 use common::SecretsError;
 use keys::CryptoError;
@@ -125,7 +127,7 @@ pub struct ApiResponse {
     pub healthy: Option<bool>,
     pub users: HashMap<String, User>,
     pub services: HashMap<String, Service>,
-    pub grants: HashMap<String, Grant>,
+    pub grants: HashMap<String, HashMap<String, Grant>>,
     pub error: Option<String>,
     pub server_info: Option<PeerInfo>,
 }
@@ -152,19 +154,37 @@ pub struct PeerInfo {
 }
 
 impl PeerInfo {
-    pub fn printable_report(&self) -> String {
-        // TODO rfc1751 encoding of these
-        return format!("\
+    pub fn printable_report(&self) -> Result<String, SecretsError> {
+        let ref fingerprint_hex = self.fingerprint;;
+        let public_key_hex = self.public_key.as_ref().to_hex();
+        let public_sign_hex = self.public_sign.as_ref().to_hex();
+        let pneumonic = try!(self.pneumonic());
+
+        return Ok(format!("\
             common name: {}\n\
             fingerprint: {}\n\
-            public key: {}\n\
-            public sign: {}",
-        self.cn, self.fingerprint,
-        self.public_key.as_ref().to_hex(),
-        self.public_sign.as_ref().to_hex());
+            public key:  {}\n\
+            public sign: {}\n\
+            pneumonic:   {}",
+            self.cn, fingerprint_hex, public_key_hex, public_sign_hex,
+            pneumonic);
+    }
+
+    fn pneumonic(&self) -> Result<String, SecretsError> {
+        let fingerprint_bytes = try!(self.fingerprint.from_hex());
+        let mut ret = Vec::new();
+        ret.extend_from_slice(&self.cn.as_bytes());
+        ret.extend_from_slice(&fingerprint_bytes);
+        ret.extend_from_slice(&self.public_key.as_ref());
+        ret.extend_from_slice(&self.public_sign.as_ref());
+        let ret = sha256::hash(ret.as_slice());
+        let ret = try!((&ret[..]).to_rfc1751());
+        Ok(ret)
     }
 }
 
+/// What a new unauthorised client sends (offline via an admin with login
+/// access) to the server to request its keys be authorized on the server
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JoinRequest {
     pub server_info: PeerInfo,
@@ -192,4 +212,16 @@ impl JoinRequest {
         let ret = try!(json_from_slice(&decompressed));
         return Ok(ret);
     }
+}
+
+// A request from the client to create a service
+pub struct ServiceCreator {
+    service: Service,
+    grants: Vec<Grant>,
+}
+
+// A request from the client to rotate a secret
+pub struct Rotator {
+    service_name: String,
+    grants: Vec<Grant>,
 }

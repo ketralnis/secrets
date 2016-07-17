@@ -48,7 +48,7 @@ impl SecretsClient {
         // this SSL verifier will not check fingerprints, because we don't know
         // the remote fingerprint yet. In addition, the server tells us its
         // fingerprint in the JSON payload, rather than verifying that that
-        // fingerprint we conencted to is the same. That's okay because all
+        // fingerprint we connected to is the same. That's okay because all
         // future connections will check against whatever fingerprint they give
         // us. So if they give us a fake fingerprint, when we ask the user they
         // will reject it. If they lie about controlling this fingerprint, then
@@ -63,7 +63,7 @@ impl SecretsClient {
 
         // this will connect via that configured SSL client which will record
         // the server's fingerprint and CN into the recorder
-        let info_url = http_path(&host, "/api/info");
+        let info_url = http_path(&host, "/api/server");
         info!("connecting to {}", info_url);
         let response = try!(http.get(&info_url).send());
         if response.status != hyper::Ok {
@@ -75,7 +75,7 @@ impl SecretsClient {
             SecretsError::ClientError("missing server info".to_string())));
 
         try!(io::stderr().write(format!("=== server info: ===\n{}\n",
-                                        server_info.printable_report())
+                                        try!(server_info.printable_report()))
                                     .as_bytes()));
 
         let confirmed = try!(utils::prompt_yn("does that look right? [y/n] "));
@@ -154,7 +154,7 @@ impl SecretsClient {
         let req = SecretsRequest::new(Method::Get, "/api/auth");
         let api_response = try!(self.server_request(req));
         let username = try!(self.username());
-        if !api_response.users.iter().any(|(name, user)| *name == username) {
+        if !api_response.users.iter().any(|(_, user)| *user.username == username) {
             return Err(SecretsError::ClientError("how come I'm not in here?".to_string()));
         }
         return Ok(());
@@ -238,6 +238,7 @@ impl SecretsClient {
                           plaintext: String,
                           grantees: Vec<String>)
                           -> Result<(), SecretsError> {
+        // look up the users that we'll grant to
         let mut req = SecretsRequest::new(Method::Get, "/api/users");
         for grantee in grantees {
             req.add_arg("user", grantee);

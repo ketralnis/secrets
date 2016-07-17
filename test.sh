@@ -33,7 +33,7 @@ fi
 
 echo checking http health
 curl --insecure https://$(hostname):4430/api/health; echo ''
-curl --insecure https://$(hostname):4430/api/info; echo ''
+curl --insecure https://$(hostname):4430/api/server; echo ''
 
 for new_user in dking florence; do
     echo creating user $new_user

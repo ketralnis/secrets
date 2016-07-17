@@ -164,7 +164,7 @@ pub fn main() {
         }
         ("client-info", Some(_)) => {
             let client_info = instance.get_peer_info().unwrap();
-            println!("=== client info: ===\n{}", client_info.printable_report());
+            println!("=== client info: ===\n{}", client_info.printable_report().unwrap());
         }
         _ => unreachable!()
     }

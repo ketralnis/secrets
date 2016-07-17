@@ -44,18 +44,8 @@ impl ServerHandler {
             return Ok((StatusCode::Ok, api));
         }
 
-        if url_matches(&request, Method::Get, "/api/info") {
-            let cn = try!(instance.ssl_cn());
-            let fingerprint = try!(instance.ssl_fingerprint());
-            let (public_key, _) = try!(instance.get_keys());
-            let (public_sign, _) = try!(instance.get_signs());
-
-            let server_info = PeerInfo {
-                cn: cn,
-                fingerprint: fingerprint,
-                public_key: public_key,
-                public_sign: public_sign,
-            };
+        if url_matches(&request, Method::Get, "/api/server") {
+            let server_info = try!(instance.get_peer_info());
             api.server_info = Some(server_info);
             return Ok((StatusCode::Ok, api));
         }
@@ -73,54 +63,41 @@ impl ServerHandler {
 
         let query_params: HashMap<String, Vec<String>> = get_query_params(&request);
 
-        if url_matches(&request, Method::Get, "/api/users") {
-            let unames = query_params.get("user");
+        if url_matches(&request, Method::Get, "/api/info") {
 
-            if let Some(unames) = unames {
+            if let Some(unames) = query_params.get("user") {
                 for ref uname in unames {
                     let user = try!(instance.get_user(uname));
                     api.users.insert(user.username.clone(), user);
                 }
             }
-            return Ok((StatusCode::Ok, api))
-        }
 
-        if url_matches(&request, Method::Get, "/api/services") {
-            let names = query_params.get("service");
-
-            if let Some(names) = names {
-                for ref name in names {
+            if let Some(service_names) = query_params.get("service") {
+                for ref name in service_names {
                     let service = try!(instance.get_service(name));
                     api.services.insert(service.name.clone(), service);
                 }
             }
-            return Ok((StatusCode::Ok, api))
-        }
 
-        if url_matches(&request, Method::Get, "/api/grants") {
-            let names = query_params.get("grant");
-
-            if let Some(names) = names {
-                for ref name in names {
+            if let Some(grant_names) = query_params.get("grant") {
+                for ref name in grant_names {
                     let (service_name, grantee_name) = Grant::split_key(name);
 
                     let grant = try!(instance.get_grant(&service_name, &grantee_name));
 
                     // add in the dependent fields
-
                     let grantee = try!(instance.get_user(&grantee_name));
                     api.users.insert(grantee.username.clone(), grantee);
-
                     let grantor = try!(instance.get_user(&grant.grantor));
                     api.users.insert(grantor.username.clone(), grantor);
-
                     let service = try!(instance.get_service(&service_name));
                     api.services.insert(service.name.clone(), service);
 
-                    api.grants.insert(grant.key(), grant);
+                    api.grants
+                        .entry(service_name).or_insert_with(|| HashMap::new())
+                        .insert(grantee_name, grant);
                 }
             }
-            return Ok((StatusCode::Ok, api))
         }
 
         return Ok((StatusCode::NotFound, api))
@@ -181,9 +158,9 @@ impl Handler for ServerHandler {
         // every request takes out a lock on the SecretsServer instance. This
         // means that we have no real concurrency to speak of, anywhere in the
         // server. It doesn't have to be this way but this simplifies things
-        // signficantly (no DB connection pooling or anything). If this is a
-        // performance problem it can be fixed, but I doubt we'll ever see real
-        // concurrent connections to speak of
+        // significantly (no DB connection pooling, no race conditions). If this
+        // is a performance problem it can be fixed, but I doubt we'll ever see
+        // real concurrent connections to speak of
         let mut instance = self.instance.lock().unwrap();
 
         match self._handle(&mut instance, &request) {

@@ -14,10 +14,11 @@ use openssl::x509::extension::Extension::KeyUsage;
 use openssl::x509::extension::KeyUsageOption::DigitalSignature;
 use openssl::x509::X509;
 use openssl::x509::X509Generator;
-use rusqlite;
+use rfc1751::ToRfc1751Error;
 use rusqlite::types::FromSql;
 use rusqlite::types::ToSql;
-use rustc_serialize::hex::ToHex;
+use rusqlite;
+use rustc_serialize::hex::{ToHex, FromHexError};
 use serde_json::Error as SerdeError;
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
@@ -26,7 +27,6 @@ use url::ParseError;
 
 use keys;
 use keys::Authable;
-use utils;
 
 quick_error! {
     #[derive(Debug)]
@@ -36,6 +36,8 @@ quick_error! {
         Crypto(err: keys::CryptoError) {from()}
         HyperError(err: hyper::Error) {from()}
         Parse(err: ParseError) {from()}
+        FromHex(err: FromHexError) {from()}
+        ToRfc1751(err: ToRfc1751Error) {from()}
         Io(err: io::Error) {from()}
         Json(err: SerdeError) {from()}
         ServerError(err: String) {} // server didn't like something the client did
