@@ -13,7 +13,8 @@ use openssl::crypto::hash::Type as HashType;
 use openssl::nid::Nid;
 use openssl::ssl::SslContext;
 use openssl::ssl::SslMethod;
-use openssl::ssl::{SSL_VERIFY_NONE, SSL_VERIFY_PEER, SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
+use openssl::ssl::{SSL_VERIFY_NONE, SSL_VERIFY_PEER, SSL_OP_NO_SSLV2,
+                   SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
 use openssl::x509::X509StoreContext;
 use rusqlite;
 use rustc_serialize::hex::ToHex;
@@ -40,9 +41,11 @@ pub struct SecretsClient {
 impl SecretsClient {
     /// create a new local database and connect to the server to get
     /// its various keys
-    pub fn create<P: AsRef<Path>>(config_file: P, host: String,
-                                  username: String, password: String,
-                              ) -> Result<Self, SecretsError> {
+    pub fn create<P: AsRef<Path>>(config_file: P,
+                                  host: String,
+                                  username: String,
+                                  password: String)
+                                  -> Result<Self, SecretsError> {
         // Because we aren't really set up yet, we have to do a lot by hand that
         // the normal client can just do through convenience methods
 
@@ -56,9 +59,11 @@ impl SecretsClient {
         // any future connections to them will fail anyway.
         let mut ssl_context = try!(SslContext::new(SslMethod::Tlsv1));
         ssl_context.set_verify(SSL_VERIFY_NONE, None);
-        ssl_context.set_options(SSL_OP_NO_SSLV2 | SSL_OP_NO_SSLV3 | SSL_OP_NO_COMPRESSION);
-        try!(ssl_context.set_cipher_list("ALL!EXPORT!EXPORT40!EXPORT56!aNULL!LOW!RC4@STRENGTH"));
-        let ssl = Openssl {context: Arc::new(ssl_context)};
+        ssl_context.set_options(SSL_OP_NO_SSLV2 | SSL_OP_NO_SSLV3 |
+                                SSL_OP_NO_COMPRESSION);
+        try!(ssl_context.set_cipher_list(
+            "ALL!EXPORT!EXPORT40!EXPORT56!aNULL!LOW!RC4@STRENGTH"));
+        let ssl = Openssl { context: Arc::new(ssl_context) };
         let connector = HttpsConnector::new(ssl);
         let http = hyper::Client::with_connector(connector);
 
@@ -68,20 +73,23 @@ impl SecretsClient {
         info!("connecting to {}", info_url);
         let response = try!(http.get(&info_url).send());
         if response.status != hyper::Ok {
-            return Err(SecretsError::ClientError(format!("unknown status {}", response.status)))
+            return Err(SecretsError::ClientError(format!("unknown status {}",
+                                                         response.status)));
         }
 
         let api_response: ApiResponse = try!(dejson_from_reader(response));
-        let server_info = try!(api_response.server_info.ok_or(
-            SecretsError::ClientError("missing server info".to_string())));
+        let server_info = try!(api_response.server_info
+            .ok_or(SecretsError::ClientError("missing server info"
+                .to_string())));
 
         try!(io::stderr().write(format!("=== server info: ===\n{}\n",
                                         try!(server_info.printable_report()))
-                                    .as_bytes()));
+            .as_bytes()));
 
         let confirmed = try!(utils::prompt_yn("does that look right? [y/n] "));
         if !confirmed {
-            return Err(SecretsError::Authentication("refused server credentials"));
+            return Err(SecretsError::Authentication("refused server \
+                                                     credentials"));
         }
 
         info!("creating client DB");
@@ -91,7 +99,7 @@ impl SecretsClient {
 
         let mut client = SecretsClient {
             db: db,
-            password: password
+            password: password,
         };
 
         try!(client.create_and_store_keys(&username));
@@ -99,8 +107,10 @@ impl SecretsClient {
         try!(client.set_global("server_host", &host));
         try!(client.set_global("server_fingerprint", &server_info.fingerprint));
         try!(client.set_global("server_cn", &server_info.cn));
-        try!(client.set_global("server_public_key", &server_info.public_key.as_ref()));
-        try!(client.set_global("server_public_sign", &server_info.public_sign.as_ref()));
+        try!(client.set_global("server_public_key",
+                               &server_info.public_key.as_ref()));
+        try!(client.set_global("server_public_sign",
+                               &server_info.public_sign.as_ref()));
 
         return Ok(client);
     }
@@ -112,7 +122,7 @@ impl SecretsClient {
         let client_info = try!(self.get_peer_info());
         let join_request = JoinRequest {
             server_info: server_info,
-            client_info: client_info
+            client_info: client_info,
         };
         return Ok(join_request);
     }
@@ -121,16 +131,19 @@ impl SecretsClient {
         let cn = try!(self.get_global::<String>("server_cn"));
         let fingerprint = try!(self.get_global::<String>("server_fingerprint"));
 
-        let public_key_vec: Vec<u8> = try!(self.get_global("server_public_key"));
+        let public_key_vec: Vec<u8> =
+            try!(self.get_global("server_public_key"));
         let public_key = box_::PublicKey::from_slice(&public_key_vec);
         let public_key = try!(public_key.ok_or(keys::CryptoError::Unknown));
 
-        let public_sign_vec: Vec<u8> = try!(self.get_global("server_public_sign"));
+        let public_sign_vec: Vec<u8> =
+            try!(self.get_global("server_public_sign"));
         let public_sign = sign::PublicKey::from_slice(&public_sign_vec);
         let public_sign = try!(public_sign.ok_or(keys::CryptoError::Unknown));
 
         return Ok(PeerInfo {
-            cn: cn, fingerprint: fingerprint,
+            cn: cn,
+            fingerprint: fingerprint,
             public_key: public_key,
             public_sign: public_sign,
         });
@@ -155,30 +168,37 @@ impl SecretsClient {
         let req = SecretsRequest::new(Method::Get, "/api/auth");
         let api_response = try!(self.server_request(req));
         let username = try!(self.username());
-        if !api_response.users.iter().any(|(_, user)| *user.username == username) {
-            return Err(SecretsError::ClientError("how come I'm not in here?".to_string()));
+        if !api_response.users
+            .iter()
+            .any(|(_, user)| *user.username == username) {
+            return Err(SecretsError::ClientError("how come I'm not in here?"
+                .to_string()));
         }
         return Ok(());
     }
 
-    fn server_request(&self, req: SecretsRequest) -> Result<ApiResponse, SecretsError> {
+    fn server_request(&self,
+                      req: SecretsRequest)
+                      -> Result<ApiResponse, SecretsError> {
         // set up the SSL verifier to check the fingerprint
         let (public_pem, private_pem) = try!(self.get_pems());
         let mut ssl_context = try!(SslContext::new(SslMethod::Tlsv1));
-        ssl_context.set_options(SSL_OP_NO_SSLV2 | SSL_OP_NO_SSLV3 | SSL_OP_NO_COMPRESSION);
-        try!(ssl_context.set_cipher_list("ALL!EXPORT!EXPORT40!EXPORT56!aNULL!LOW!RC4@STRENGTH"));
+        ssl_context.set_options(SSL_OP_NO_SSLV2 | SSL_OP_NO_SSLV3 |
+                                SSL_OP_NO_COMPRESSION);
+        try!(ssl_context.set_cipher_list(
+            "ALL!EXPORT!EXPORT40!EXPORT56!aNULL!LOW!RC4@STRENGTH"));
         try!(ssl_context.set_certificate(&public_pem));
         try!(ssl_context.set_private_key(&private_pem));
         try!(ssl_context.check_private_key());
 
-        let server_fingerprint = try!(self.get_global::<String>("server_fingerprint"));
+        let server_fingerprint =
+            try!(self.get_global::<String>("server_fingerprint"));
         let server_cn = try!(self.get_global::<String>("server_cn"));
-        ssl_context.set_verify_with_data(
-            SSL_VERIFY_PEER,
-            verify_fingerprint,
-            (server_fingerprint, server_cn));
+        ssl_context.set_verify_with_data(SSL_VERIFY_PEER,
+                                         verify_fingerprint,
+                                         (server_fingerprint, server_cn));
 
-        let ssl = Openssl {context: Arc::new(ssl_context)};
+        let ssl = Openssl { context: Arc::new(ssl_context) };
         let connector = HttpsConnector::new(ssl);
         let http_client = hyper::Client::with_connector(connector);
         let host = try!(self.get_global::<String>("server_host"));
@@ -193,23 +213,23 @@ impl SecretsClient {
                 url.set_query(Some(&qss));
                 let request_builder = http_client.get(url);
                 request_builder.send()
-            },
-            (Method::Post, None) => {
-                http_client.post(url).send()
             }
+            (Method::Post, None) => http_client.post(url).send(),
             (Method::Post, Some(json_value)) => {
                 let json_str = json_value;
                 http_client.post(url)
                     .body(&json_str[..])
                     .send()
-            },
-            _ => unreachable!()
+            }
+            _ => unreachable!(),
         });
 
         if response.status != StatusCode::Ok {
-            return Err(SecretsError::ClientError(format!(
-                "got an error from the server ({}): {}",
-                req.path, response.status)));
+            return Err(SecretsError::ClientError(format!("got an error \
+                                                          from the server \
+                                                          ({}): {}",
+                                                         req.path,
+                                                         response.status)));
         }
         let api_response: ApiResponse = try!(dejson_from_reader(response));
         if let Some(err) = api_response.error {
@@ -218,7 +238,9 @@ impl SecretsClient {
         return Ok(api_response);
     }
 
-    pub fn connect<P: AsRef<Path>>(config_file: P, password: String) -> Result<Self, SecretsError> {
+    pub fn connect<P: AsRef<Path>>(config_file: P,
+                                   password: String)
+                                   -> Result<Self, SecretsError> {
         let db = try!(common::connect_db(config_file));
         let client = SecretsClient {
             db: db,
@@ -248,7 +270,7 @@ impl SecretsClient {
         }
         let api_response = try!(self.server_request(req));
 
-        if api_response.services.len()>0 {
+        if api_response.services.len() > 0 {
             return Err(SecretsError::ServiceAlreadyExists(service_name));
         }
 
@@ -284,7 +306,7 @@ impl SecretsClient {
                     service_name: service_name.clone(),
                     ciphertext: ciphertext,
                     created: now,
-                    signature: signature
+                    signature: signature,
                 };
                 grants.push(grant);
             } else {
@@ -302,7 +324,7 @@ impl SecretsClient {
         try!(create_req.set_json(service_creator));
         try!(self.server_request(create_req));
 
-        return Ok(())
+        return Ok(());
     }
 }
 
@@ -327,7 +349,7 @@ impl SecretsRequest {
             method: method,
             path: path,
             arguments: Vec::new(),
-            json: None
+            json: None,
         }
     }
 
@@ -345,7 +367,8 @@ impl SecretsRequest {
 
 pub fn verify_fingerprint(_preverify_ok: bool,
                           x509_ctx: &X509StoreContext,
-                          expected_values: &(String, String)) -> bool {
+                          expected_values: &(String, String))
+                          -> bool {
     let (ref expected_fingerprint, ref expected_cn) = *expected_values;
 
     let pem = x509_ctx.get_current_cert();
@@ -358,7 +381,7 @@ pub fn verify_fingerprint(_preverify_ok: bool,
     let remote_fingerprint = pem.fingerprint(HashType::SHA256);
     if remote_fingerprint.is_none() {
         error!("remote had no fingerprint");
-        return false
+        return false;
     }
     let remote_fingerprint = remote_fingerprint.unwrap().to_hex();
 
@@ -371,8 +394,9 @@ pub fn verify_fingerprint(_preverify_ok: bool,
 
     let cn_matches = utils::constant_time_compare(&cn.as_bytes(),
                                                   &expected_cn.as_bytes());
-    let fingerprint_matches = utils::constant_time_compare(&remote_fingerprint.as_bytes(),
-                                                           &expected_fingerprint.as_bytes());
+    let fingerprint_matches =
+        utils::constant_time_compare(&remote_fingerprint.as_bytes(),
+                                     &expected_fingerprint.as_bytes());
     return cn_matches && fingerprint_matches;
 }
 
@@ -386,6 +410,7 @@ impl SecretsContainer for SecretsClient {
     }
 }
 
-fn create_client_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error> {
+fn create_client_schema(conn: &mut rusqlite::Connection)
+                        -> Result<(), rusqlite::Error> {
     Ok(())
 }

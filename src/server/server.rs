@@ -27,7 +27,10 @@ impl SecretsServer {
 
         let mut db = try!(common::create_db(config_file));
         try!(create_server_schema(&mut db));
-        let mut server = SecretsServer {db: db, password: password};
+        let mut server = SecretsServer {
+            db: db,
+            password: password,
+        };
         try!(server.create_and_store_keys(&cn));
 
         Ok(server)
@@ -37,14 +40,20 @@ impl SecretsServer {
                                    password: String)
                                    -> Result<Self, SecretsError> {
         let db = try!(common::connect_db(config_file));
-        let instance = SecretsServer {db: db, password: password};
+        let instance = SecretsServer {
+            db: db,
+            password: password,
+        };
         return Ok(instance);
     }
 
     // called interactively
-    pub fn accept_join(&mut self, jr: JoinRequest) -> Result<User, SecretsError> {
+    pub fn accept_join(&mut self,
+                       jr: JoinRequest)
+                       -> Result<User, SecretsError> {
         if jr.server_info != try!(self.get_peer_info()) {
-            return Err(SecretsError::Authentication("server_info doesn't match"));
+            return Err(SecretsError::Authentication("server_info doesn't \
+                                                     match"));
         }
 
         if try!(self.user_exists(&jr.client_info.cn)) {
@@ -56,7 +65,8 @@ impl SecretsServer {
 
         let accepted = try!(utils::prompt_yn("does that look right? [y/n] "));
         if !accepted {
-            return Err(SecretsError::Authentication("refused client authenticator"));
+            return Err(SecretsError::Authentication("refused client \
+                                                     authenticator"));
         }
 
         let user = try!(self.create_user(jr.client_info.cn,
@@ -67,19 +77,23 @@ impl SecretsServer {
         return Ok(user);
     }
 
-    fn create_user(&self, username: String,
+    fn create_user(&self,
+                   username: String,
                    ssl_fingerprint: String,
                    public_key: box_::PublicKey,
-                   public_sign: sign::PublicKey) -> Result<User, SecretsError> {
+                   public_sign: sign::PublicKey)
+                   -> Result<User, SecretsError> {
         let now = time::get_time().sec;
         try!(self.db.execute("
-                INSERT INTO users(username, ssl_fingerprint,
-                                  public_key, public_sign,
-                                  created)
-                VALUES(?,?,?,?,?)
+            INSERT INTO users(username, ssl_fingerprint,
+                              public_key, public_sign,
+                              created)
+            VALUES(?,?,?,?,?)
             ",
-            &[&username, &ssl_fingerprint,
-              &public_key.as_ref(), &public_sign.as_ref(),
+            &[&username,
+              &ssl_fingerprint,
+              &public_key.as_ref(),
+              &public_sign.as_ref(),
               &now]));
         let user = try!(self.get_user(&username));
         return Ok(user);
@@ -93,37 +107,44 @@ impl SecretsServer {
                 WHERE username=?
             ",
             &[username],
-            User::from_row));
+              User::from_row));
         return Ok(user);
     }
 
     fn user_exists(&self, username: &String) -> Result<bool, SecretsError> {
         match self.get_user(username) {
             Ok(_) => Ok(true),
-            Err(SecretsError::Sqlite(rusqlite::Error::QueryReturnedNoRows)) => Ok(false),
-            Err(x) => Err(x)
+            Err(SecretsError::Sqlite(rusqlite::Error::QueryReturnedNoRows)) => {
+                Ok(false)
+            }
+            Err(x) => Err(x),
         }
     }
 
-    pub fn authenticate(&self, username: &String, ssl_fingerprint: &String) -> Result<User, SecretsError> {
+    pub fn authenticate(&self,
+                        username: &String,
+                        ssl_fingerprint: &String)
+                        -> Result<User, SecretsError> {
         let user = match self.get_user(username) {
             Ok(user) => user,
             Err(SecretsError::Sqlite(rusqlite::Error::QueryReturnedNoRows)) => {
                 return Err(SecretsError::Authentication("no user"))
-            },
+            }
             Err(x) => return Err(x),
         };
         if !utils::constant_time_compare(&user.ssl_fingerprint.as_bytes(),
                                          &ssl_fingerprint.as_bytes()) {
-            return Err(SecretsError::Authentication("bad fingerprint match"))
+            return Err(SecretsError::Authentication("bad fingerprint match"));
         }
         if user.disabled.is_some() {
-            return Err(SecretsError::Authentication("user is disabled"))
+            return Err(SecretsError::Authentication("user is disabled"));
         }
         return Ok(user);
     }
 
-    pub fn get_service(&self, service_name: &String) -> Result<Service, SecretsError> {
+    pub fn get_service(&self,
+                       service_name: &String)
+                       -> Result<Service, SecretsError> {
         let service = try!(self.db.query_row_and_then("
                 SELECT service_name, created, modified, creator, modified_by
                 FROM services
@@ -134,11 +155,15 @@ impl SecretsServer {
         return Ok(service);
     }
 
-    pub fn service_exists(&self, service_name: &String) -> Result<bool, SecretsError> {
+    pub fn service_exists(&self,
+                          service_name: &String)
+                          -> Result<bool, SecretsError> {
         match self.get_service(service_name) {
             Ok(_) => Ok(true),
-            Err(SecretsError::Sqlite(rusqlite::Error::QueryReturnedNoRows)) => Ok(false),
-            Err(x) => Err(x)
+            Err(SecretsError::Sqlite(rusqlite::Error::QueryReturnedNoRows)) => {
+                Ok(false)
+            }
+            Err(x) => Err(x),
         }
     }
 
@@ -153,10 +178,12 @@ impl SecretsServer {
         let now = time::get_time().sec;
 
         if !grants.iter().any(|g| g.grantee == auth_user.username) {
-            return Err(SecretsError::ServerError("you must grant yourself".to_string()));
+            return Err(SecretsError::ServerError("you must grant yourself"
+                .to_string()));
         }
         if try!(self.service_exists(&service.name)) {
-            return Err(SecretsError::ServiceAlreadyExists(service.name.clone()));
+            return Err(SecretsError::ServiceAlreadyExists(service.name
+                .clone()));
         }
 
         let trans = try!(self.db.transaction());
@@ -174,12 +201,12 @@ impl SecretsServer {
                        auth_user: &User,
                        service: &Service)
                        -> Result<(), SecretsError> {
-        if (now-service.modified).abs() > SYNC_SLOP
-                || (now-service.created).abs() > SYNC_SLOP {
+        if (now - service.modified).abs() > SYNC_SLOP ||
+           (now - service.created).abs() > SYNC_SLOP {
             return Err(SecretsError::ServerError("clock sync".to_string()));
         }
-        if service.creator != auth_user.username
-            || service.modified_by != auth_user.username {
+        if service.creator != auth_user.username ||
+           service.modified_by != auth_user.username {
             return Err(SecretsError::ServerError("you're lying".to_string()));
         }
 
@@ -188,8 +215,11 @@ impl SecretsServer {
                                      creator, modified_by)
                 VALUES(?,?,?,?,?)
             ",
-            &[&service.name, &service.created, &service.modified,
-              &service.creator, &service.modified_by]));
+            &[&service.name,
+              &service.created,
+              &service.modified,
+              &service.creator,
+              &service.modified_by]));
 
         Ok(())
     }
@@ -200,24 +230,27 @@ impl SecretsServer {
                      service: &Service,
                      grant: Grant)
                      -> Result<(), SecretsError> {
-        if (now-grant.created).abs() > SYNC_SLOP {
+        if (now - grant.created).abs() > SYNC_SLOP {
             return Err(SecretsError::ServerError("clock sync".to_string()));
         }
         if grant.grantor != auth_user.username {
             return Err(SecretsError::ServerError("you're lying".to_string()));
         }
         if service.name != grant.service_name {
-            return Err(SecretsError::ServerError("malformed request".to_string()));
+            return Err(SecretsError::ServerError("malformed request"
+                .to_string()));
         }
 
         try!(trans.execute("
-                INSERT INTO grants(service_name, grantor, grantee, ciphertext,
-                                   created)
-                VALUES (?,?,?,?,?)
+            INSERT INTO grants(service_name, grantor, grantee, ciphertext,
+                        created)
+            VALUES (?,?,?,?,?)
             ",
-            &[&grant.service_name, &grant.grantor, &grant.grantee, &grant.ciphertext,
+            &[&grant.service_name,
+              &grant.grantor,
+              &grant.grantee,
+              &grant.ciphertext,
               &now]));
-
         Ok(())
     }
 
@@ -235,7 +268,8 @@ impl SecretsServer {
             "));
         for &(ref grantee, ref ciphertext, ref signature) in grants {
             if grantee.disabled.is_some() {
-                return Err(SecretsError::Authentication("can't grant to disabled user"));
+                return Err(SecretsError::Authentication("can't grant to \
+                                                         disabled user"));
             }
             // make sure the signature matches
             if !sign::verify_detached(&signature,
@@ -245,17 +279,24 @@ impl SecretsServer {
             }
             try!(trans.execute("
                     INSERT INTO new_grants(grantee) VALUES(?)
-                ", &[&grantee.username]));
+                ",
+                &[&grantee.username]));
             try!(trans.execute("
                     INSERT OR REPLACE INTO grants(grantor, grantee,
                                                   service_name, created,
                                                   ciphertext, signature)
                     VALUES (?, ?, ?, ?, ?, ?)
-                ", &[&grantor.username, &grantee.username, &service.name,
-                     &now, *ciphertext, &signature.as_ref()]));
+                ",
+                &[&grantor.username,
+                  &grantee.username,
+                  &service.name,
+                  &now,
+                  *ciphertext,
+                  &signature.as_ref()]));
             try!(trans.execute("
                     UPDATE services SET modified=?, modified_by=?
-                ", &[&now, &grantor.username]));
+                ",
+                &[&now, &grantor.username]));
             try!(trans.execute_batch("
                     DELETE FROM grants
                     WHERE grantee NOT IN (SELECT grantee FROM new_grants);
@@ -275,8 +316,9 @@ impl SecretsServer {
                 FROM grants
                 WHERE service_name = ? AND grantee = ?
              ",
-            &[service_name, grantee_name],
-            Grant::from_row));
+             &[service_name,
+               grantee_name],
+               Grant::from_row));
         // verify the signature on the grant
         let grantor = try!(self.get_user(&grant.grantor));
         if !sign::verify_detached(&grant.signature,
@@ -314,7 +356,8 @@ impl SecretsContainer for SecretsServer {
     }
 }
 
-fn create_server_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error> {
+fn create_server_schema(conn: &mut rusqlite::Connection)
+                        -> Result<(), rusqlite::Error> {
     try!(conn.execute_batch("
         CREATE TABLE users (
             username PRIMARY KEY NOT NULL,
@@ -359,34 +402,39 @@ mod tests {
     #[test]
     pub fn test_server() {
         let dir = tempdir::TempDir::new("server.rs").unwrap();
-        let password =  "hello".to_string();
+        let password = "hello".to_string();
         let cn = "me.local".to_string();
         let mut tempfile = dir.into_path();
         tempfile.push("server.db");
 
         debug!("Creating");
-        let created = SecretsServer::create(&tempfile, password.to_string(), cn).unwrap();
+        let created =
+            SecretsServer::create(&tempfile, password.to_string(), cn).unwrap();
         drop(created);
 
         debug!("Connecting");
-        let server = SecretsServer::connect(tempfile, password.to_string()).unwrap();
+        let server = SecretsServer::connect(tempfile, password.to_string())
+            .unwrap();
 
         debug!("Creating users");
         let (d_public_key, _d_private_key) = box_::gen_keypair();
         let (d_public_sign, _d_private_sign) = sign::gen_keypair();
         let david = server.create_user("david".to_string(),
-                                       "david_fingerprint".to_string(),
-                                       d_public_key,
-                                       d_public_sign).unwrap();
+                         "david_fingerprint".to_string(),
+                         d_public_key,
+                         d_public_sign)
+            .unwrap();
         let authenticated = server.authenticate(&"david".to_string(),
-                                                &"david_fingerprint".to_string()).unwrap();
+                          &"david_fingerprint".to_string())
+            .unwrap();
         assert_eq!(david.username, authenticated.username);
 
         let (f_public_key, _f_private_key) = box_::gen_keypair();
         let (f_public_sign, _f_private_sign) = sign::gen_keypair();
         let _florence = server.create_user("florence".to_string(),
-                                           "florence_fingerprint".to_string(),
-                                           f_public_key,
-                                           f_public_sign).unwrap();
+                         "florence_fingerprint".to_string(),
+                         f_public_key,
+                         f_public_sign)
+            .unwrap();
     }
 }

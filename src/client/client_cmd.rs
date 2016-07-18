@@ -16,36 +16,40 @@ use utils;
 
 // TODO this renders like crap
 // TODO move this
-pub const PASSWORD_SOURCE_HELP: &'static str = "Where to get the master password. Valid formats:
-   pass:password (a literal password)
-   env:VARIABLE (an environment variable)
-   file:filename (read from a file; beware of newlines)
-   fd:number (read from a file descriptor)
-   prompt (you will be prompted)
-";
+pub const PASSWORD_SOURCE_HELP: &'static str = "\
+    Where to get the master password. Valid formats:
+    pass:password (a literal password)
+    env:VARIABLE (an environment variable)
+    file:filename (read from a file; beware of newlines!)
+    fd:number (read from a file descriptor)
+    prompt (you will be prompted)";
 
 pub fn main() {
     let mut clapapp = App::new("secrets-client")
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .arg(Arg::with_name("db")
-            .short("d").long("--db")
+            .short("d")
+            .long("--db")
             .value_name("FILENAME")
             .help("the path to the secrets-client config file")
             .takes_value(true))
         .arg(Arg::with_name("password")
-             .short("p").long("--password")
-             .value_name("PASSWORD-SOURCE")
-             .help(PASSWORD_SOURCE_HELP)
-             .takes_value(true)
-             .default_value("prompt")
-             .validator(password::validate_password_source))
+            .short("p")
+            .long("--password")
+            .value_name("PASSWORD-SOURCE")
+            .help(PASSWORD_SOURCE_HELP)
+            .takes_value(true)
+            .default_value("prompt")
+            .validator(password::validate_password_source))
         .subcommand(SubCommand::with_name("join")
             .arg(Arg::with_name("username")
-                .short("u").long("username")
+                .short("u")
+                .long("username")
                 .takes_value(true)
                 .required(true))
             .arg(Arg::with_name("host")
-                .short("h").long("host")
+                .short("h")
+                .long("host")
                 .validator(|h| utils::validate_host("host", &h))
                 .takes_value(true)
                 .required(true)))
@@ -102,7 +106,7 @@ pub fn main() {
             let mut buf = PathBuf::new();
             buf.push(x);
             buf
-        },
+        }
         None => {
             let home_dir = env::home_dir().unwrap();
             home_dir.join(".secrets-client.db")
@@ -130,13 +134,21 @@ pub fn main() {
     if let ("join", Some(subargs)) = matches.subcommand() {
         let username = subargs.value_of("username").unwrap().to_string();
         let host = subargs.value_of("host").unwrap().to_string();
-        let client = client::SecretsClient::create(config_file, host,
-                                                   username, pw).unwrap();
-        let client_report = client.get_peer_info().unwrap().printable_report().unwrap();
-        io::stderr().write(format!("=== created client info: ===\n{}\n",
-                                   client_report).as_bytes()).unwrap();
+        let client =
+            client::SecretsClient::create(config_file, host, username, pw)
+                .unwrap();
+        let client_report =
+            client.get_peer_info().unwrap().printable_report().unwrap();
+        io::stderr()
+            .write(format!("=== created client info: ===\n{}\n",
+                           client_report)
+                .as_bytes())
+            .unwrap();
         let jr = client.join_request().unwrap();
-        io::stderr().write("Send this to your friendly local secrets admin:\n".as_bytes()).unwrap();
+        io::stderr()
+            .write("Send this to your friendly local secrets admin:\n"
+                .as_bytes())
+            .unwrap();
         let pastable = jr.to_pastable().unwrap();
         io::stdout().write(pastable.as_bytes()).unwrap();
         io::stdout().write("\n".as_bytes()).unwrap();
@@ -155,20 +167,26 @@ pub fn main() {
         ("create", Some(subargs)) => {
             let service_name = subargs.value_of("service_name").unwrap();
             let grantees = subargs.value_of("grants")
-                .map(|v| v.split(",").map(|v| v.to_owned()).collect::<Vec<String>>())
+                .map(|v| {
+                    v.split(",").map(|v| v.to_owned()).collect::<Vec<String>>()
+                })
                 .unwrap_or(Vec::new());
             let secret_source = subargs.value_of("source").unwrap();
-            let secret_source = password::parse_password_source(secret_source).unwrap();
-            let secret_value = password::evaluate_password_source(secret_source).unwrap();
+            let secret_source = password::parse_password_source(secret_source)
+                .unwrap();
+            let secret_value =
+                password::evaluate_password_source(secret_source).unwrap();
             instance.create_service(service_name.to_owned(),
-                                    secret_value.to_owned(),
-                                    grantees).unwrap();
+                                secret_value.to_owned(),
+                                grantees)
+                .unwrap();
             exit(0);
         }
         ("client-info", Some(_)) => {
             let client_info = instance.get_peer_info().unwrap();
-            println!("=== client info: ===\n{}", client_info.printable_report().unwrap());
+            println!("=== client info: ===\n{}",
+                     client_info.printable_report().unwrap());
         }
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }

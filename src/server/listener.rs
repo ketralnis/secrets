@@ -16,7 +16,8 @@ use openssl::nid::Nid;
 use openssl::ssl::SslContext;
 use openssl::ssl::SslMethod;
 use openssl::ssl::SslStream;
-use openssl::ssl::{SSL_VERIFY_PEER, SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
+use openssl::ssl::{SSL_VERIFY_PEER, SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3,
+                   SSL_OP_NO_COMPRESSION};
 use openssl::x509::X509StoreContext;
 use rustc_serialize::hex::ToHex;
 use serde_json::de::from_reader as dejson_from_reader;
@@ -29,14 +30,14 @@ use common::SecretsError;
 use server::server::SecretsServer;
 
 struct ServerHandler {
-    instance: Arc<Mutex<SecretsServer>>
+    instance: Arc<Mutex<SecretsServer>>,
 }
 
 impl ServerHandler {
     fn _handle(&self,
                instance: &mut SecretsServer,
                mut request: &mut Request)
-            -> Result<(StatusCode, ApiResponse), SecretsError> {
+               -> Result<(StatusCode, ApiResponse), SecretsError> {
         try!(request.set_read_timeout(Some(Duration::new(2, 0))));
 
         let mut api = ApiResponse::new();
@@ -64,7 +65,8 @@ impl ServerHandler {
             return Ok((StatusCode::Ok, api));
         }
 
-        let query_params: HashMap<String, Vec<String>> = get_query_params(&request);
+        let query_params: HashMap<String, Vec<String>> =
+            get_query_params(&request);
 
         if url_matches(&request, Method::Get, "/api/info") {
             if let Some(unames) = query_params.get("user") {
@@ -99,7 +101,8 @@ impl ServerHandler {
                     api.services.insert(service.name.clone(), service);
 
                     api.grants
-                        .entry(service_name).or_insert_with(|| HashMap::new())
+                        .entry(service_name)
+                        .or_insert_with(|| HashMap::new())
                         .insert(grantee_name, grant);
                 }
             }
@@ -110,34 +113,35 @@ impl ServerHandler {
         // ======== POST ========
         if url_matches(&request, Method::Post, "/api/create-service") {
             // let body =
-            let create_req: ServiceCreator = try!(dejson_from_reader(&mut request));
+            let create_req: ServiceCreator =
+                try!(dejson_from_reader(&mut request));
             let service = create_req.service;
             let grants = create_req.grants;
             let service_name = service.name.clone();
 
             // the server will do the authenticating
-            try!(instance.create_service(&auth_user,
-                                         service, grants));
+            try!(instance.create_service(&auth_user, service, grants));
 
             let service = try!(instance.get_service(&service_name));
             api.services.insert(service_name, service);
 
-            return Ok((StatusCode::Ok, api))
+            return Ok((StatusCode::Ok, api));
         }
 
-        return Ok((StatusCode::NotFound, api))
+        return Ok((StatusCode::NotFound, api));
     }
 
     fn write_response(&self,
                       status_code: StatusCode,
                       api: ApiResponse,
-                      mut response: Response) -> Result<(), SecretsError> {
+                      mut response: Response)
+                      -> Result<(), SecretsError> {
         match json_to_vec(&api) {
             Ok(value_str) => {
                 *response.status_mut() = status_code;
                 try!(response.send(&value_str[..]));
                 Ok(())
-            },
+            }
             Err(error) => {
                 error!("Error encoding JSON: {:?}", error);
                 *response.status_mut() = StatusCode::InternalServerError;
@@ -161,19 +165,20 @@ impl ServerHandler {
             &SecretsError::ClientError(ref err) => {
                 *response.status_mut() = StatusCode::BadRequest;
                 response.send(&format!("{}", err).as_bytes())
-            },
+            }
             &SecretsError::Authentication(ref err) => {
                 *response.status_mut() = StatusCode::Unauthorized;
                 response.send(&format!("{}", err).as_bytes())
-            },
-            &SecretsError::Crypto(_) | _ => {
+            }
+            &SecretsError::Crypto(_) |
+            _ => {
                 // SecretsError::Crypto is probably because they are screwing
                 // around with trying to guess keys or something. It's important
                 // that they not be able to tell it from any other internal
                 // error
                 *response.status_mut() = StatusCode::InternalServerError;
                 response.send(b"")
-            },
+            }
         }
     }
 }
@@ -199,7 +204,7 @@ impl Handler for ServerHandler {
                         error!("Error writing response {:?}", err);
                     }
                 }
-            },
+            }
             Err(err_o) => {
                 error!("request error {:?}", err_o);
                 match self.write_error(&err_o, response) {
@@ -218,30 +223,34 @@ impl Handler for ServerHandler {
     }
 }
 
-fn authenticate_request(instance: &SecretsServer, request: &Request) -> Result<User, SecretsError> {
+fn authenticate_request(instance: &SecretsServer,
+                        request: &Request)
+                        -> Result<User, SecretsError> {
     // all other requests require a client cert
     let ssl_info = match request.ssl::<SslStream<HttpStream>>() {
         None => {
             // uh?
             return Err(SecretsError::Authentication("not ssl?"));
-        },
-        Some(s) => s.ssl()
+        }
+        Some(s) => s.ssl(),
     };
     let client_pem = match ssl_info.peer_certificate() {
         None => {
             return return Err(SecretsError::Authentication("no client cert"));
-        },
-        Some(c) => c
-    };
-    let (remote_cn, remote_fingerprint) = match (client_pem.subject_name().text_by_nid(Nid::CN),
-                                                 client_pem.fingerprint(HashType::SHA256)) {
-        (Some(cn), Some(fingerprint)) => {
-            (cn.to_string(), fingerprint.to_hex())
-        },
-        _ => {
-            return Err(SecretsError::Authentication("malformed client cert"));
         }
+        Some(c) => c,
     };
+    let (remote_cn, remote_fingerprint) =
+        match (client_pem.subject_name().text_by_nid(Nid::CN),
+               client_pem.fingerprint(HashType::SHA256)) {
+            (Some(cn), Some(fingerprint)) => {
+                (cn.to_string(), fingerprint.to_hex())
+            }
+            _ => {
+                return Err(SecretsError::Authentication("malformed client \
+                                                         cert"));
+            }
+        };
 
     let user = try!(instance.authenticate(&remote_cn, &remote_fingerprint));
     return Ok(user);
@@ -262,15 +271,17 @@ fn make_ssl(instance: &mut SecretsServer) -> Result<Openssl, SecretsError> {
     try!(ssl_context.set_certificate(&public_pem));
     try!(ssl_context.set_private_key(&private_pem));
     try!(ssl_context.check_private_key());
-    let ssl = Openssl {context: Arc::new(ssl_context)};
+    let ssl = Openssl { context: Arc::new(ssl_context) };
     return Ok(ssl);
 }
 
-pub fn listen(mut instance: SecretsServer, listen: &str) -> Result<(), SecretsError> {
+pub fn listen(mut instance: SecretsServer,
+              listen: &str)
+              -> Result<(), SecretsError> {
     let ssl = try!(make_ssl(&mut instance));
     let hyper_server = try!(HyperServer::https(listen, ssl));
     let mutexed_instance = Arc::new(Mutex::new(instance));
-    let server_handler = ServerHandler {instance: mutexed_instance};
+    let server_handler = ServerHandler { instance: mutexed_instance };
     try!(hyper_server.handle(server_handler));
     info!("terminating (hyper_server.handle returned)");
     Ok(())
@@ -278,13 +289,9 @@ pub fn listen(mut instance: SecretsServer, listen: &str) -> Result<(), SecretsEr
 
 fn url_matches(request: &Request, method: Method, prefix: &str) -> bool {
     match request.uri {
-        RequestUri::AbsolutePath(ref x)
-                if x.starts_with(prefix)
-                && request.method == method
-                => {
-            true
-        }
-        _ => false
+        RequestUri::AbsolutePath(ref x) if x.starts_with(prefix) &&
+                                           request.method == method => true,
+        _ => false,
     }
 }
 

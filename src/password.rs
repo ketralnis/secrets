@@ -32,7 +32,7 @@ quick_error! {
 }
 
 pub fn validate_password_source(source: String) -> Result<(), String> {
-    return parse_password_source(&source).map(|_| ())
+    return parse_password_source(&source).map(|_| ());
 }
 
 pub fn parse_password_source(source: &str) -> Result<PasswordSource, String> {
@@ -66,7 +66,8 @@ pub fn parse_password_source(source: &str) -> Result<PasswordSource, String> {
     }
 }
 
-pub fn evaluate_password_source(source: PasswordSource) -> Result<String, PasswordError> {
+pub fn evaluate_password_source(source: PasswordSource)
+                                -> Result<String, PasswordError> {
     match source {
         PasswordSource::Password(x) => Ok(x),
         PasswordSource::Env(key) => {
@@ -80,9 +81,7 @@ pub fn evaluate_password_source(source: PasswordSource) -> Result<String, Passwo
             Ok(s)
         }
         PasswordSource::Fd(fd) => {
-            let mut f = unsafe {
-                File::from_raw_fd(fd)
-            };
+            let mut f = unsafe { File::from_raw_fd(fd) };
             let mut s = String::new();
             try!(f.read_to_string(&mut s));
             Ok(s)
@@ -91,15 +90,16 @@ pub fn evaluate_password_source(source: PasswordSource) -> Result<String, Passwo
             try!(io::stderr().write(b"password:"));
             let val = try!(rpassword::read_password());
             Ok(val)
-        },
+        }
         PasswordSource::Edit(editor) => {
             let editor = match editor {
                 None => {
-                    try!(env::var("EDITOR")
-                        .map_err(|_| PasswordError::Editor(
-                            "editor not specified and $EDITOR not set")))
-                },
-                Some(x) => x
+                    try!(env::var("EDITOR").map_err(|_| {
+                        PasswordError::Editor("editor not specified and \
+                                               $EDITOR not set")
+                    }))
+                }
+                Some(x) => x,
             };
             let tfile = try!(tempfile::NamedTempFile::new());
             try!(tfile.sync_all());
@@ -109,26 +109,27 @@ pub fn evaluate_password_source(source: PasswordSource) -> Result<String, Passwo
             try!(fs::set_permissions(tfile.path(), permissions));
 
             // use the shell to execute the editor
-            let tfile_path = try!(tfile.path().to_str()
-                .ok_or(PasswordError::Editor("couldn't destr the tempfile name?")));
+            let tfile_path = try!(tfile.path()
+                .to_str()
+                .ok_or(PasswordError::Editor("couldn't destr the tempfile \
+                                              name?")));
             let command = format!("{} {}", editor, tfile_path);
-            let mut child = try!(
-                Command::new("/bin/sh")
+            let mut child = try!(Command::new("/bin/sh")
                 .arg("-e")
                 .arg(command)
                 .spawn());
             let ecode = try!(child.wait());
             if !ecode.success() {
-                return Err(PasswordError::Editor("editor failed"))
+                return Err(PasswordError::Editor("editor failed"));
             }
             let mut reread = try!(File::open(tfile.path()));
             let mut inputted: Vec<u8> = Vec::new();
             try!(reread.read_to_end(&mut inputted));
 
-            if inputted[inputted.len()-1] == b'\n' {
+            if inputted[inputted.len() - 1] == b'\n' {
                 // editors add a newline to the end which the user probably
                 // doesn't intend
-                let newlen = inputted.len()-1;
+                let newlen = inputted.len() - 1;
                 inputted.truncate(newlen);
             }
 

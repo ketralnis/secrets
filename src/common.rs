@@ -66,20 +66,25 @@ pub fn init_ssl_cert<'ctx>(cn: &str) -> Result<(Vec<u8>, Vec<u8>), SecretsError>
     return Ok((public_pem_vec, private_pem_vec));
 }
 
-pub fn create_db<P: AsRef<Path>>(config_file: P)
-                                 -> Result<rusqlite::Connection, SecretsError> {
-     let conn = try!(_connect_db(config_file, true));
-     Ok(conn)
+pub fn create_db<P: AsRef<Path>>
+    (config_file: P)
+     -> Result<rusqlite::Connection, SecretsError> {
+    let conn = try!(_connect_db(config_file, true));
+    Ok(conn)
 }
 
-pub fn connect_db<P: AsRef<Path>>(config_file: P)
-                                  -> Result<rusqlite::Connection, SecretsError> {
+pub fn connect_db<P: AsRef<Path>>
+    (config_file: P)
+     -> Result<rusqlite::Connection, SecretsError> {
     let conn = try!(_connect_db(config_file, false));
     try!(check_db(&conn));
     return Ok(conn);
 }
 
-fn _connect_db<P: AsRef<Path>>(path: P, create: bool) -> Result<rusqlite::Connection, rusqlite::Error> {
+fn _connect_db<P: AsRef<Path>>
+    (path: P,
+     create: bool)
+     -> Result<rusqlite::Connection, rusqlite::Error> {
     let flags = if create {
         rusqlite::SQLITE_OPEN_READ_WRITE | rusqlite::SQLITE_OPEN_CREATE
     } else {
@@ -112,7 +117,8 @@ fn pragmas(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error> {
     ")
 }
 
-fn create_common_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error> {
+fn create_common_schema(conn: &mut rusqlite::Connection)
+                        -> Result<(), rusqlite::Error> {
     conn.execute_batch("
         CREATE TABLE globals (
             key PRIMARY KEY NOT NULL,
@@ -149,24 +155,29 @@ pub trait SecretsContainer {
         Ok(())
     }
 
-    fn get_keys(&self) -> Result<(box_::PublicKey, box_::SecretKey), SecretsError> {
+    fn get_keys(&self)
+                -> Result<(box_::PublicKey, box_::SecretKey), SecretsError> {
         let public_key_vec: Vec<u8> = try!(self.get_global("public_key"));
         let public_key = box_::PublicKey::from_slice(&public_key_vec);
         let public_key = try!(public_key.ok_or(keys::CryptoError::Unknown));
 
-        let private_key_vec: Vec<u8> = try!(self.get_encrypted_global("private_key"));
+        let private_key_vec: Vec<u8> =
+            try!(self.get_encrypted_global("private_key"));
         let private_key = box_::SecretKey::from_slice(&private_key_vec);
         let private_key = try!(private_key.ok_or(keys::CryptoError::Unknown));
 
         return Ok((public_key, private_key));
     }
 
-    fn get_signs(&self) -> Result<(sign::PublicKey, sign::SecretKey), SecretsError> {
+    fn get_signs
+        (&self)
+         -> Result<(sign::PublicKey, sign::SecretKey), SecretsError> {
         let public_sign_vec: Vec<u8> = try!(self.get_global("public_sign"));
         let public_sign = sign::PublicKey::from_slice(&public_sign_vec);
         let public_sign = try!(public_sign.ok_or(keys::CryptoError::Unknown));
 
-        let private_sign_vec: Vec<u8> = try!(self.get_encrypted_global("private_sign"));
+        let private_sign_vec: Vec<u8> =
+            try!(self.get_encrypted_global("private_sign"));
         let private_sign = sign::SecretKey::from_slice(&private_sign_vec);
         let private_sign = try!(private_sign.ok_or(keys::CryptoError::Unknown));
 
@@ -178,9 +189,11 @@ pub trait SecretsContainer {
         let mut public_key_vec = Cursor::new(public_key_vec);
         let public_pem = try!(X509::from_pem(&mut public_key_vec));
 
-        let private_pem_vec: Vec<u8> = try!(self.get_encrypted_global("private_pem"));
+        let private_pem_vec: Vec<u8> =
+            try!(self.get_encrypted_global("private_pem"));
         let mut private_pem_vec = Cursor::new(private_pem_vec);
-        let private_pem = try!(PKey::private_key_from_pem(&mut private_pem_vec));
+        let private_pem =
+            try!(PKey::private_key_from_pem(&mut private_pem_vec));
 
         return Ok((public_pem, private_pem));
     }
@@ -196,21 +209,28 @@ pub trait SecretsContainer {
     fn ssl_fingerprint(&self) -> Result<String, SecretsError> {
         let (public_key, _) = try!(self.get_pems());
         let fingerprint = public_key.fingerprint(HashType::SHA256);
-        let fingerprint = try!(fingerprint.ok_or(SecretsError::Unknown("stored cert has no fingerprint")));
+        let fingerprint =
+            try!(fingerprint.ok_or(SecretsError::Unknown("stored cert has \
+                                                          no fingerprint")));
         let fingerprint = fingerprint.to_hex();
         return Ok(fingerprint);
     }
 
-    fn get_global<T: FromSql+Authable>(&self, key_name: &str) -> Result<T, SecretsError> {
+    fn get_global<T: FromSql + Authable>(&self,
+                                         key_name: &str)
+                                         -> Result<T, SecretsError> {
         let conn = self.get_db();
         let value: T = try!(conn.query_row(
             "SELECT value FROM globals WHERE key = ? AND NOT encrypted",
             &[&key_name],
             |row| row.get(0)));
-        return Ok(value)
+        return Ok(value);
     }
 
-    fn set_global<'a, T: ToSql+Authable>(&mut self, key_name: &str, value: &'a T) -> Result<(), SecretsError> {
+    fn set_global<'a, T: ToSql + Authable>(&mut self,
+                                           key_name: &str,
+                                           value: &'a T)
+                                           -> Result<(), SecretsError> {
         let conn = self.get_db();
         try!(conn.execute("
             INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
@@ -219,25 +239,30 @@ pub trait SecretsContainer {
         Ok(())
     }
 
-    fn get_encrypted_global(&self, key_name: &str) -> Result<Vec<u8>, SecretsError> {
+    fn get_encrypted_global(&self,
+                            key_name: &str)
+                            -> Result<Vec<u8>, SecretsError> {
         let ciphertext: Vec<u8> = try!({
             let conn = self.get_db();
-            conn.query_row(
-                "SELECT value FROM globals WHERE key = ? AND encrypted",
+            conn.query_row("
+                SELECT value FROM globals WHERE key = ? AND \
+                encrypted",
                 &[&key_name],
                 |row| row.get(0))
         });
         let password = self.get_password();
         let plaintext = try!(keys::decrypt_blob_with_password(&ciphertext,
-                                                              password.as_bytes()));
+                                                  password.as_bytes()));
         return Ok(plaintext);
     }
 
-    fn set_encrypted_global(&mut self, key_name: &str, plaintext: &[u8]) -> Result<(), SecretsError> {
+    fn set_encrypted_global(&mut self,
+                            key_name: &str,
+                            plaintext: &[u8])
+                            -> Result<(), SecretsError> {
         let ciphertext = try!({
             let password = self.get_password();
-            keys::encrypt_blob_with_password(&plaintext,
-                                             password.as_bytes())
+            keys::encrypt_blob_with_password(&plaintext, password.as_bytes())
         });
 
         let db = self.get_db();
@@ -245,6 +270,6 @@ pub trait SecretsContainer {
             INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
             VALUES(?, ?, ?, 1)",
             &[&key_name, &ciphertext, &time::get_time().sec]));
-        return Ok(())
+        return Ok(());
     }
 }

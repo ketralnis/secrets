@@ -20,11 +20,12 @@ use utils;
 pub fn main() {
     let matches = App::new("secrets-server")
         .arg(Arg::with_name("db")
-             .short("d").long("db")
-             .value_name("DB_FILE")
-             .help("path to the secrets database file")
-             .required(true)
-             .takes_value(true))
+            .short("d")
+            .long("db")
+            .value_name("DB_FILE")
+            .help("path to the secrets database file")
+            .required(true)
+            .takes_value(true))
         .arg(Arg::with_name("password")
              .short("p").long("--password")
              .value_name("PASSWORD-SOURCE")
@@ -36,14 +37,16 @@ pub fn main() {
         .subcommand(SubCommand::with_name("init")
             .help("initialise the database")
             .arg(Arg::with_name("name")
-                 .short("n").long("name")
-                 .help("the hostname that others will use to contact me")
-                 .takes_value(true)
-                 .required(true)))
+                .short("n")
+                .long("name")
+                .help("the hostname that others will use to contact me")
+                .takes_value(true)
+                .required(true)))
         .subcommand(SubCommand::with_name("server")
             .about("bring up the secrets server")
             .arg(Arg::with_name("listen")
-                .short("l").long("listen")
+                .short("l")
+                .long("listen")
                 .takes_value(true)
                 .default_value("0.0.0.0:4430")
                 .validator(|l| utils::validate_host("listen", &l))))
@@ -78,7 +81,8 @@ pub fn main() {
             exit(1);
         }
         let cn = subargs.value_of("name").unwrap().to_string();
-        let instance = server::SecretsServer::create(config_file, cn, pw).unwrap();
+        let instance = server::SecretsServer::create(config_file, cn, pw)
+            .unwrap();
         // let fingerprint = instance.ssl_fingerprint().unwrap();
         let server_info = instance.get_peer_info().unwrap();
         println!("=== created server: ===\n{}",
@@ -99,13 +103,13 @@ pub fn main() {
         ("server", Some(subargs)) => {
             let listen = subargs.value_of("listen").unwrap();
             listener::listen(instance, listen).unwrap()
-        },
+        }
         ("server-info", _) => {
             let server_info = instance.get_peer_info().unwrap();
 
             println!("=== server info: ===\n{}",
                      server_info.printable_report().unwrap());
-        },
+        }
         ("accept-join", Some(subargs)) => {
             let filename = subargs.value_of("filename").unwrap();
             let mut payload = String::new();
@@ -114,6 +118,6 @@ pub fn main() {
             let jr = JoinRequest::from_pastable(payload.as_bytes()).unwrap();
             instance.accept_join(jr).unwrap();
         }
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }

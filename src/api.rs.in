@@ -41,8 +41,9 @@ impl User {
             .ok_or(CryptoError::CantDecrypt));
 
         let public_sign: Vec<u8> = row.get("public_sign");
-        let public_sign = try!(sign::PublicKey::from_slice(&public_sign.as_ref())
-            .ok_or(CryptoError::CantDecrypt));
+        let public_sign =
+            try!(sign::PublicKey::from_slice(&public_sign.as_ref())
+                .ok_or(CryptoError::CantDecrypt));
 
         let u = User {
             username: row.get("username"),
@@ -62,7 +63,7 @@ pub struct Service {
     pub created: i64,
     pub modified: i64,
     pub creator: String,
-    pub modified_by: String
+    pub modified_by: String,
 }
 
 impl Service {
@@ -91,8 +92,7 @@ pub struct Grant {
 impl Grant {
     pub fn from_row(row: rusqlite::Row) -> Result<Self, SecretsError> {
         let sig: Vec<u8> = row.get("signature");
-        let signature = try!(
-            sign::Signature::from_slice(&sig)
+        let signature = try!(sign::Signature::from_slice(&sig)
             .ok_or(CryptoError::CantDecrypt));
 
         let u = Grant {
@@ -106,8 +106,12 @@ impl Grant {
         Ok(u)
     }
 
-    pub fn signable(grantee: &String, grantor: &String, service_name: &String,
-                    ciphertext: &[u8], created: i64) -> Vec<u8> {
+    pub fn signable(grantee: &String,
+                    grantor: &String,
+                    service_name: &String,
+                    ciphertext: &[u8],
+                    created: i64)
+                    -> Vec<u8> {
         let mut ret: Vec<u8> = vec![];
         ret.extend_from_slice(&grantee.as_bytes());
         ret.extend_from_slice(&b","[..]);
@@ -177,13 +181,16 @@ impl PeerInfo {
         let pneumonic = try!(self.pneumonic());
 
         return Ok(format!("\
-            common name: {}\n\
-            fingerprint: {}\n\
-            public key:  {}\n\
-            public sign: {}\n\
-            pneumonic:   {}",
-            self.cn, fingerprint_hex, public_key_hex, public_sign_hex,
-            pneumonic));
+                          common name: {}\n\
+                          fingerprint: {}\n\
+                          public key:  {}\n\
+                          public sign: {}\n\
+                          pneumonic:   {}",
+                          self.cn,
+                          fingerprint_hex,
+                          public_key_hex,
+                          public_sign_hex,
+                          pneumonic));
     }
 
     fn pneumonic(&self) -> Result<String, SecretsError> {
