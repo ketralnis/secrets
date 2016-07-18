@@ -177,6 +177,9 @@ impl SecretsServer {
         // check all of the timestamps and allow minimal slop
         let now = time::get_time().sec;
 
+        // make sure we have the most up-to-date version
+        let auth_user = try!(self.get_user(&auth_user.username));
+
         if !grants.iter().any(|g| g.grantee == auth_user.username) {
             return Err(SecretsError::ServerError("you must grant yourself"
                 .to_string()));
@@ -184,6 +187,18 @@ impl SecretsServer {
         if try!(self.service_exists(&service.name)) {
             return Err(SecretsError::ServiceAlreadyExists(service.name
                 .clone()));
+        }
+
+        if auth_user.disabled.is_some() {
+            return Err(SecretsError::Authentication("disabled user can't grant"));
+        }
+
+        for ref grant in &grants {
+            let grantee_user = try!(self.get_user(&grant.grantee));
+            if grantee_user.disabled.is_some() {
+                return Err(SecretsError::Authentication("can't grant to \
+                                                         disabled user"));
+            }
         }
 
         let trans = try!(self.db.transaction());
@@ -243,13 +258,14 @@ impl SecretsServer {
 
         try!(trans.execute("
             INSERT INTO grants(service_name, grantor, grantee, ciphertext,
-                        created)
-            VALUES (?,?,?,?,?)
+                        signature, created)
+            VALUES (?,?,?,?,?,?)
             ",
             &[&grant.service_name,
               &grant.grantor,
               &grant.grantee,
               &grant.ciphertext,
+              &grant.signature.as_ref(),
               &now]));
         Ok(())
     }
@@ -372,17 +388,17 @@ fn create_server_schema(conn: &mut rusqlite::Connection)
             service_name PRIMARY KEY NOT NULL,
             created INTEGER NOT NULL,
             modified INTEGER NOT NULL,
-            creator REFERENCES users(username),
-            modified_by NULL REFERENCES users(username)
+            creator NOT NULL REFERENCES users(username),
+            modified_by NOT NULL REFERENCES users(username)
         );
 
         CREATE TABLE grants (
-            grantee REFERENCES users(username),
-            service_name REFERENCES services(service_name),
+            grantee NOT NULL REFERENCES users(username),
+            service_name NOT NULL REFERENCES services(service_name),
             created INTEGER NOT NULL,
-            grantor REFERENCES users(username),
-            ciphertext, -- encrypted to grantee's public key
-            signature, -- signed by grantor's public key
+            grantor NOT NULL REFERENCES users(username),
+            ciphertext NOT NULL, -- encrypted to grantee's public key
+            signature NOT NULL, -- signed by grantor's public key
             PRIMARY KEY(grantee, service_name)
         );
         CREATE INDEX grants_services ON grants(service_name);
