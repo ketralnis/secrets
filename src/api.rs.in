@@ -183,7 +183,7 @@ impl PeerInfo {
             public sign: {}\n\
             pneumonic:   {}",
             self.cn, fingerprint_hex, public_key_hex, public_sign_hex,
-            pneumonic);
+            pneumonic));
     }
 
     fn pneumonic(&self) -> Result<String, SecretsError> {

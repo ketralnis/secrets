@@ -247,8 +247,9 @@ impl SecretsServer {
                     INSERT INTO new_grants(grantee) VALUES(?)
                 ", &[&grantee.username]));
             try!(trans.execute("
-                    INSERT OR REPLACE INTO grants(grantor, grantee, service_name,
-                                                  created, ciphertext, signature)
+                    INSERT OR REPLACE INTO grants(grantor, grantee,
+                                                  service_name, created,
+                                                  ciphertext, signature)
                     VALUES (?, ?, ?, ?, ?, ?)
                 ", &[&grantor.username, &grantee.username, &service.name,
                      &now, *ciphertext, &signature.as_ref()]));
@@ -269,7 +270,8 @@ impl SecretsServer {
                      grantee_name: &String)
                      -> Result<Grant, SecretsError> {
         let grant = try!(self.db.query_row_and_then("
-                SELECT service_name, grantee, grantor, ciphertext, signature, created
+                SELECT service_name, grantee, grantor, ciphertext, signature,
+                       created
                 FROM grants
                 WHERE service_name = ? AND grantee = ?
              ",
@@ -336,7 +338,7 @@ fn create_server_schema(conn: &mut rusqlite::Connection) -> Result<(), rusqlite:
             service_name REFERENCES services(service_name),
             created INTEGER NOT NULL,
             grantor REFERENCES users(username),
-            ciphertext, -- encrypted by grantor's secret key to grantee's public key
+            ciphertext, -- encrypted to grantee's public key
             signature, -- signed by grantor's public key
             PRIMARY KEY(grantee, service_name)
         );
