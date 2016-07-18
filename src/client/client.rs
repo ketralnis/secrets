@@ -3,28 +3,29 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
-use hyper;
 use hyper::method::Method;
 use hyper::net::HttpsConnector;
 use hyper::net::Openssl;
 use hyper::status::StatusCode;
 use hyper::Url;
+use hyper;
 use openssl::crypto::hash::Type as HashType;
 use openssl::nid::Nid;
-use openssl::ssl::{SSL_VERIFY_NONE, SSL_VERIFY_PEER, SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
 use openssl::ssl::SslContext;
 use openssl::ssl::SslMethod;
+use openssl::ssl::{SSL_VERIFY_NONE, SSL_VERIFY_PEER, SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
 use openssl::x509::X509StoreContext;
 use rusqlite;
 use rustc_serialize::hex::ToHex;
+use serde::ser::Serialize;
 use serde_json::from_reader as dejson_from_reader;
-use serde_json::ser::to_string as json_to_string;
-use serde_json::Value as JsonValue;
+use serde_json::ser::to_vec as json_to_vec;
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
+use time;
 use url::form_urlencoded::Serializer as QueryStringSerializer;
 
-use api::{ApiResponse, PeerInfo, JoinRequest};
+use api::{ApiResponse, PeerInfo, JoinRequest, Service, Grant, ServiceCreator};
 use common;
 use common::SecretsContainer;
 use common::SecretsError;
@@ -197,9 +198,9 @@ impl SecretsClient {
                 http_client.post(url).send()
             }
             (Method::Post, Some(json_value)) => {
-                let json_str = try!(json_to_string(&json_value));
+                let json_str = json_value;
                 http_client.post(url)
-                    .body(json_str.as_bytes())
+                    .body(&json_str[..])
                     .send()
             },
             _ => unreachable!()
@@ -224,7 +225,7 @@ impl SecretsClient {
             password: password,
         };
         try!(client.check_db());
-        try!(client.get_keys()); // make sure this effectively checks their password
+        try!(client.get_keys()); // this effectively checks their password
         return Ok(client);
     }
 
@@ -238,15 +239,70 @@ impl SecretsClient {
                           plaintext: String,
                           grantees: Vec<String>)
                           -> Result<(), SecretsError> {
-        // look up the users that we'll grant to
-        let mut req = SecretsRequest::new(Method::Get, "/api/users");
-        for grantee in grantees {
-            req.add_arg("user", grantee);
+        // make sure the service doesn't exist and look up the users that we'll
+        // grant to to get their keys
+        let mut req = SecretsRequest::new(Method::Get, "/api/info");
+        req.add_arg("service", service_name.clone());
+        for grantee_name in &grantees {
+            req.add_arg("user", grantee_name.clone());
         }
-        let json = try!(self.server_request(req));
-        println!("{}", "json");
-        unreachable!();
-        Ok(())
+        let api_response = try!(self.server_request(req));
+
+        if api_response.services.len()>0 {
+            return Err(SecretsError::ServiceAlreadyExists(service_name));
+        }
+
+        let now = time::get_time().sec;
+        let username = try!(self.username());
+        let (_, private_key) = try!(self.get_keys());
+        let (_, private_sign) = try!(self.get_signs());
+
+        let service = Service {
+            name: service_name.clone(),
+            created: now,
+            modified: now,
+            creator: username.clone(),
+            modified_by: username.clone(),
+        };
+
+        let mut grants = vec![];
+
+        for grantee_name in grantees {
+            if let Some(grantee) = api_response.users.get(&grantee_name) {
+                let ciphertext = try!(keys::encrypt_to(&plaintext.as_bytes(),
+                                                       &private_key,
+                                                       &grantee.public_key));
+                let signable = Grant::signable(&grantee_name,
+                                               &username,
+                                               &service_name,
+                                               &ciphertext,
+                                               now);
+                let signature = sign::sign_detached(&signable, &private_sign);
+                let grant = Grant {
+                    grantee: grantee_name.clone(),
+                    grantor: username.clone(),
+                    service_name: service_name.clone(),
+                    ciphertext: ciphertext,
+                    created: now,
+                    signature: signature
+                };
+                grants.push(grant);
+            } else {
+                return Err(SecretsError::UserDoesntExist(grantee_name));
+            }
+        }
+
+        let service_creator = ServiceCreator {
+            service: service,
+            grants: grants,
+        };
+
+        let mut create_req = SecretsRequest::new(Method::Post,
+                                                 "/api/create-service");
+        try!(create_req.set_json(service_creator));
+        try!(self.server_request(create_req));
+
+        return Ok(())
     }
 }
 
@@ -262,7 +318,7 @@ struct SecretsRequest {
     method: Method,
     path: &'static str,
     arguments: Vec<(&'static str, String)>,
-    json: Option<JsonValue>,
+    json: Option<Vec<u8>>,
 }
 
 impl SecretsRequest {
@@ -280,9 +336,10 @@ impl SecretsRequest {
         return self;
     }
 
-    fn set_json(&mut self, value: JsonValue) -> &mut Self {
-        self.json = Some(value);
-        return self;
+    fn set_json<T: Serialize>(&mut self, value: T) -> Result<(), SecretsError> {
+        let serialized = try!(json_to_vec(&value));
+        self.json = Some(serialized);
+        return Ok(());
     }
 }
 
@@ -318,7 +375,6 @@ pub fn verify_fingerprint(_preverify_ok: bool,
                                                            &expected_fingerprint.as_bytes());
     return cn_matches && fingerprint_matches;
 }
-
 
 impl SecretsContainer for SecretsClient {
     fn get_db(&self) -> &rusqlite::Connection {

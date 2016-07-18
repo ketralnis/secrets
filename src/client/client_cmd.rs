@@ -132,6 +132,9 @@ pub fn main() {
         let host = subargs.value_of("host").unwrap().to_string();
         let client = client::SecretsClient::create(config_file, host,
                                                    username, pw).unwrap();
+        let client_report = client.get_peer_info().unwrap().printable_report().unwrap();
+        io::stderr().write(format!("=== created client info: ===\n{}\n",
+                                   client_report).as_bytes()).unwrap();
         let jr = client.join_request().unwrap();
         io::stderr().write("Send this to your friendly local secrets admin:\n".as_bytes()).unwrap();
         let pastable = jr.to_pastable().unwrap();

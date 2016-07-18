@@ -31,19 +31,21 @@ use keys::Authable;
 quick_error! {
     #[derive(Debug)]
     pub enum SecretsError {
-        Sqlite(err: rusqlite::Error) {from()}
-        Ssl(err: SslError) {from()}
+        Authentication(err: &'static str) {}
+        ClientError(err: String) {} // client didn't like something the server did
         Crypto(err: keys::CryptoError) {from()}
-        HyperError(err: hyper::Error) {from()}
-        Parse(err: ParseError) {from()}
         FromHex(err: FromHexError) {from()}
-        ToRfc1751(err: ToRfc1751Error) {from()}
+        HyperError(err: hyper::Error) {from()}
         Io(err: io::Error) {from()}
         Json(err: SerdeError) {from()}
+        Parse(err: ParseError) {from()}
         ServerError(err: String) {} // server didn't like something the client did
-        ClientError(err: String) {} // client didn't like something the server did
-        Authentication(err: &'static str) {}
+        ServiceAlreadyExists(err: String) {}
+        Sqlite(err: rusqlite::Error) {from()}
+        Ssl(err: SslError) {from()}
+        ToRfc1751(err: ToRfc1751Error) {from()}
         Unknown(err: &'static str) {}
+        UserDoesntExist(err: String) {}
     }
 }
 

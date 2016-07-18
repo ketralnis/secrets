@@ -2,26 +2,28 @@ use std::collections::HashMap;
 use std::io::Error as IOError;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use hyper::method::Method;
 use hyper::net::HttpStream;
 use hyper::net::Openssl;
-use hyper::server::{Handler, Request, Response};
 use hyper::server::Server as HyperServer;
+use hyper::server::{Handler, Request, Response};
 use hyper::status::StatusCode;
 use hyper::uri::RequestUri;
 use openssl::crypto::hash::Type as HashType;
 use openssl::nid::Nid;
-use openssl::ssl::{SSL_VERIFY_PEER, SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
 use openssl::ssl::SslContext;
 use openssl::ssl::SslMethod;
 use openssl::ssl::SslStream;
+use openssl::ssl::{SSL_VERIFY_PEER, SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
 use openssl::x509::X509StoreContext;
 use rustc_serialize::hex::ToHex;
-use serde_json::ser::to_string as json_to_string;
+use serde_json::de::from_reader as dejson_from_reader;
+use serde_json::ser::to_vec as json_to_vec;
 use url::form_urlencoded::parse as parse_qs;
 
-use api::{User, Service, Grant, PeerInfo, ApiResponse};
+use api::{User, Grant, ApiResponse, ServiceCreator};
 use common::SecretsContainer;
 use common::SecretsError;
 use server::server::SecretsServer;
@@ -33,8 +35,9 @@ struct ServerHandler {
 impl ServerHandler {
     fn _handle(&self,
                instance: &mut SecretsServer,
-               request: &Request)
+               mut request: &mut Request)
             -> Result<(StatusCode, ApiResponse), SecretsError> {
+        try!(request.set_read_timeout(Some(Duration::new(2, 0))));
 
         let mut api = ApiResponse::new();
 
@@ -52,19 +55,18 @@ impl ServerHandler {
 
         // ================ authentication required from here ================
 
-        let user = try!(authenticate_request(&instance, &request));
+        let auth_user = try!(authenticate_request(&instance, &request));
 
         if url_matches(&request, Method::Get, "/api/auth") {
             // this URL only checks that the client can authenticate. they don't
             // really care about the result
-            api.users.insert(user.username.clone(), user.clone());
+            api.users.insert(auth_user.username.clone(), auth_user.clone());
             return Ok((StatusCode::Ok, api));
         }
 
         let query_params: HashMap<String, Vec<String>> = get_query_params(&request);
 
         if url_matches(&request, Method::Get, "/api/info") {
-
             if let Some(unames) = query_params.get("user") {
                 for ref uname in unames {
                     let user = try!(instance.get_user(uname));
@@ -73,9 +75,11 @@ impl ServerHandler {
             }
 
             if let Some(service_names) = query_params.get("service") {
-                for ref name in service_names {
-                    let service = try!(instance.get_service(name));
-                    api.services.insert(service.name.clone(), service);
+                for ref service_name in service_names {
+                    if try!(instance.service_exists(service_name)) {
+                        let service = try!(instance.get_service(service_name));
+                        api.services.insert(service.name.clone(), service);
+                    }
                 }
             }
 
@@ -83,7 +87,8 @@ impl ServerHandler {
                 for ref name in grant_names {
                     let (service_name, grantee_name) = Grant::split_key(name);
 
-                    let grant = try!(instance.get_grant(&service_name, &grantee_name));
+                    let grant = try!(instance.get_grant(&service_name,
+                                                        &grantee_name));
 
                     // add in the dependent fields
                     let grantee = try!(instance.get_user(&grantee_name));
@@ -98,6 +103,26 @@ impl ServerHandler {
                         .insert(grantee_name, grant);
                 }
             }
+
+            return Ok((StatusCode::Ok, api));
+        }
+
+        // ======== POST ========
+        if url_matches(&request, Method::Post, "/api/create-service") {
+            // let body =
+            let create_req: ServiceCreator = try!(dejson_from_reader(&mut request));
+            let service = create_req.service;
+            let grants = create_req.grants;
+            let service_name = service.name.clone();
+
+            // the server will do the authenticating
+            try!(instance.create_service(&auth_user,
+                                         service, grants));
+
+            let service = try!(instance.get_service(&service_name));
+            api.services.insert(service_name, service);
+
+            return Ok((StatusCode::Ok, api))
         }
 
         return Ok((StatusCode::NotFound, api))
@@ -107,10 +132,10 @@ impl ServerHandler {
                       status_code: StatusCode,
                       api: ApiResponse,
                       mut response: Response) -> Result<(), SecretsError> {
-        match json_to_string(&api) {
+        match json_to_vec(&api) {
             Ok(value_str) => {
                 *response.status_mut() = status_code;
-                try!(response.send(value_str.as_bytes()));
+                try!(response.send(&value_str[..]));
                 Ok(())
             },
             Err(error) => {
@@ -154,7 +179,7 @@ impl ServerHandler {
 }
 
 impl Handler for ServerHandler {
-    fn handle(&self, request: Request, response: Response) -> () {
+    fn handle(&self, mut request: Request, response: Response) -> () {
         // every request takes out a lock on the SecretsServer instance. This
         // means that we have no real concurrency to speak of, anywhere in the
         // server. It doesn't have to be this way but this simplifies things
@@ -163,7 +188,7 @@ impl Handler for ServerHandler {
         // real concurrent connections to speak of
         let mut instance = self.instance.lock().unwrap();
 
-        match self._handle(&mut instance, &request) {
+        match self._handle(&mut instance, &mut request) {
             Ok((status_code, api_response)) => {
                 debug!("response({:?}): {:?}", status_code, api_response);
                 match self.write_response(status_code, api_response, response) {

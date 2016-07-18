@@ -11,7 +11,7 @@ use sodiumoxide::crypto::sign;
 quick_error! {
     #[derive(Debug)]
     pub enum CryptoError {
-        Io(err: io::Error) { from() }
+        Io(err: io::Error) {from()}
         CantDecrypt
         Unknown
     }
@@ -98,7 +98,7 @@ pub fn decrypt_blob_with_password(blob: &[u8], password: &[u8]) -> Result<Vec<u8
 
     let derived_key = try!(derive_key_from_password(password, salt));
 
-    let plaintext = try!(secretbox::open(&ciphertext, &nonce, &derived_key)
+    let plaintext = try!(secretbox::open(&ciphertext[..], &nonce, &derived_key)
                         .map_err(|_: ()| CryptoError::CantDecrypt));
     return Ok(plaintext);
 }
@@ -146,6 +146,47 @@ pub fn check_auth_items_with_password(items: &Authable, expected_tag: &[u8],
     } else {
         return Err(CryptoError::CantDecrypt)
     }
+}
+
+pub fn encrypt_to(plaintext: &[u8],
+                  from: &box_::SecretKey,
+                  to: &box_::PublicKey)
+                  -> Result<Vec<u8>, CryptoError> {
+    let nonce = box_::gen_nonce();
+    let ciphertext = box_::seal(plaintext, &nonce, to, from);
+
+    // turn that into our stored format which includes the nonce and stuff
+    let mut ret = vec![];
+
+    // encrypted blob version
+    try!(ret.write_u64::<NetworkEndian>(1));
+
+    ret.extend_from_slice(&nonce[..]);
+    ret.extend_from_slice(&ciphertext[..]);
+    Ok(ret)
+}
+
+pub fn decrypt_from(blob: &[u8],
+                    from: &box_::PublicKey,
+                    to: &box_::SecretKey)
+                    -> Result<Vec<u8>, CryptoError> {
+    let mut rdr = io::Cursor::new(blob);
+
+    let version = try!(rdr.read_u64::<NetworkEndian>());
+    if version != 1 { return Err(CryptoError::CantDecrypt); }
+
+    let mut nonce: Vec<u8> = vec![0; box_::NONCEBYTES];
+    try!(rdr.read(&mut nonce));
+    let nonce = try!(box_::Nonce::from_slice(&nonce).ok_or(CryptoError::CantDecrypt));
+
+    let mut ciphertext = vec![];
+    try!(rdr.read_to_end(&mut ciphertext));
+
+    let plaintext = try!(
+        box_::open(&ciphertext[..], &nonce, &from, &to)
+        .map_err(|_| CryptoError::CantDecrypt));
+
+    return Ok(plaintext);
 }
 
 /// Trait for things that we can build authentication tokens out of
@@ -217,6 +258,7 @@ impl Authable for sign::PublicKey {
 
 #[cfg(test)]
 mod tests {
+    use sodiumoxide::crypto::box_;
     use super::*;
 
     #[test]
@@ -254,5 +296,18 @@ mod tests {
         let bad_items: &[&Authable] = &[&"robert", &"georgia", &"tony"];
         let verified = check_auth_items_with_password(&bad_items, &sig[..], good_password);
         assert_eq!(true, verified.is_err());
+    }
+
+    #[test]
+    pub fn test_box() {
+        let (public_david, private_david) = box_::gen_keypair();
+        let (public_florence, private_florence) = box_::gen_keypair();
+
+        let plaintext = b"hello!".to_vec();
+
+        let encrypted = encrypt_to(&plaintext[..], &private_david, &public_florence).unwrap();
+        let decrypted = decrypt_from(&encrypted[..], &public_david, &private_florence).unwrap();
+
+        assert_eq!(plaintext, decrypted);
     }
 }

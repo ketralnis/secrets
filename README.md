@@ -24,12 +24,13 @@ Secrets is a system for safely storing shared passwords between users
 # Unimplemented blockers
 
 * user key caching/pinning
+  - every time we see a user, cache the key we saw and error if it has changed
 * it's currently impossible to change a store password. probably need an intermediate password store instead of individually encrypting things with it
 * user exists/service exists/grant exists messages should be better than sql errors
 * any security sensitive values including public keys should be signed, so attackers can't just insert their public keys right into the DB
 * File format security. See: https://www.cs.ox.ac.uk/files/6487/pwvault.pdf
   - auth codes so people can't just modify our database (both on client and server)
-  - merkle tree logs, maybe built out of those auth codes
+  - merkle tree logs built out of those auth codes
 * documentation
   - user level
   - crypto level

@@ -12,6 +12,8 @@ use common::SecretsError;
 use keys;
 use utils;
 
+const SYNC_SLOP: i64 = 60; // in seconds
+
 pub struct SecretsServer {
     db: rusqlite::Connection,
     password: String,
@@ -39,7 +41,7 @@ impl SecretsServer {
         return Ok(instance);
     }
 
-    /// (called interactively)
+    // called interactively
     pub fn accept_join(&mut self, jr: JoinRequest) -> Result<User, SecretsError> {
         if jr.server_info != try!(self.get_peer_info()) {
             return Err(SecretsError::Authentication("server_info doesn't match"));
@@ -132,31 +134,91 @@ impl SecretsServer {
         return Ok(service);
     }
 
-    pub fn create_service(&mut self,
-                          service_name: String,
-                          user: &User,
-                          ciphertext: Vec<u8>) -> Result<Service, SecretsError> {
-        {
-            let now = time::get_time().sec;
-            let trans = try!(self.db.transaction());
-            try!(trans.execute("
-                    INSERT INTO services(service_name, created, modified,
-                                         creator, modified_by)
-                    VALUES(?,?,?,?,?)
-                ",
-                &[&service_name, &now, &now, &user.username, &user.username]));
-            // we create the automatic self-grant
-            try!(trans.execute("
-                    INSERT INTO grants(service_name, grantor, grantee, ciphertext,
-                                       created)
-                    VALUES (?,?,?,?,?)
-                ",
-                &[&service_name, &user.username, &user.username, &ciphertext,
-                  &now]));
-            try!(trans.commit());
+    pub fn service_exists(&self, service_name: &String) -> Result<bool, SecretsError> {
+        match self.get_service(service_name) {
+            Ok(_) => Ok(true),
+            Err(SecretsError::Sqlite(rusqlite::Error::QueryReturnedNoRows)) => Ok(false),
+            Err(x) => Err(x)
         }
-        let service = try!(self.get_service(&service_name));
-        return Ok(service);
+    }
+
+    pub fn create_service(&mut self,
+                          auth_user: &User,
+                          service: Service,
+                          grants: Vec<Grant>)
+                          -> Result<(), SecretsError> {
+        // the client has to create the timestamps in order to include them in
+        // the signature, but we want them to be able to lie about them. So
+        // check all of the timestamps and allow minimal slop
+        let now = time::get_time().sec;
+
+        if !grants.iter().any(|g| g.grantee == auth_user.username) {
+            return Err(SecretsError::ServerError("you must grant yourself".to_string()));
+        }
+        if try!(self.service_exists(&service.name)) {
+            return Err(SecretsError::ServiceAlreadyExists(service.name.clone()));
+        }
+
+        let trans = try!(self.db.transaction());
+        try!(Self::_create_service(&trans, now, &auth_user, &service));
+        for grant in grants {
+            try!(Self::_create_grant(&trans, now, &auth_user, &service, grant));
+        }
+        try!(trans.commit());
+
+        Ok(())
+    }
+
+    fn _create_service(trans: &rusqlite::Transaction,
+                       now: i64,
+                       auth_user: &User,
+                       service: &Service)
+                       -> Result<(), SecretsError> {
+        if (now-service.modified).abs() > SYNC_SLOP
+                || (now-service.created).abs() > SYNC_SLOP {
+            return Err(SecretsError::ServerError("clock sync".to_string()));
+        }
+        if service.creator != auth_user.username
+            || service.modified_by != auth_user.username {
+            return Err(SecretsError::ServerError("you're lying".to_string()));
+        }
+
+        try!(trans.execute("
+                INSERT INTO services(service_name, created, modified,
+                                     creator, modified_by)
+                VALUES(?,?,?,?,?)
+            ",
+            &[&service.name, &service.created, &service.modified,
+              &service.creator, &service.modified_by]));
+
+        Ok(())
+    }
+
+    fn _create_grant(trans: &rusqlite::Transaction,
+                     now: i64,
+                     auth_user: &User,
+                     service: &Service,
+                     grant: Grant)
+                     -> Result<(), SecretsError> {
+        if (now-grant.created).abs() > SYNC_SLOP {
+            return Err(SecretsError::ServerError("clock sync".to_string()));
+        }
+        if grant.grantor != auth_user.username {
+            return Err(SecretsError::ServerError("you're lying".to_string()));
+        }
+        if service.name != grant.service_name {
+            return Err(SecretsError::ServerError("malformed request".to_string()));
+        }
+
+        try!(trans.execute("
+                INSERT INTO grants(service_name, grantor, grantee, ciphertext,
+                                   created)
+                VALUES (?,?,?,?,?)
+            ",
+            &[&grant.service_name, &grant.grantor, &grant.grantee, &grant.ciphertext,
+              &now]));
+
+        Ok(())
     }
 
     pub fn rotate_service(&mut self,
@@ -305,11 +367,11 @@ mod tests {
         drop(created);
 
         debug!("Connecting");
-        let mut server = SecretsServer::connect(tempfile, password.to_string()).unwrap();
+        let server = SecretsServer::connect(tempfile, password.to_string()).unwrap();
 
         debug!("Creating users");
         let (d_public_key, _d_private_key) = box_::gen_keypair();
-        let (d_public_sign, d_private_sign) = sign::gen_keypair();
+        let (d_public_sign, _d_private_sign) = sign::gen_keypair();
         let david = server.create_user("david".to_string(),
                                        "david_fingerprint".to_string(),
                                        d_public_key,
@@ -324,26 +386,5 @@ mod tests {
                                            "florence_fingerprint".to_string(),
                                            f_public_key,
                                            f_public_sign).unwrap();
-
-        server.create_service("service1".to_string(),
-                              &david,
-                              "ciphertext".as_bytes().to_vec()).unwrap();
-
-        // david will need to get Florence's public key first
-        let florence = server.get_user(&"florence".to_string()).unwrap();
-        let signed = sign::sign_detached(&"ciphertext".as_bytes(),
-                                         &d_private_sign);
-
-        server.rotate_service("service1".to_string(),
-                              &david,
-                              &[(&florence,
-                                 &"ciphertext".as_bytes().to_vec(),
-                                 &signed)
-                               ]).unwrap();
-
-        // now florence should be able to find that and get the grant
-        let grant = server.get_grant(&"service1".to_string(),
-                                     &florence.username).unwrap();
-        assert_eq!(grant.ciphertext, "ciphertext".as_bytes().to_vec());
     }
 }
