@@ -101,10 +101,10 @@ impl SecretsServer {
 
     pub fn get_user(&self, username: &String) -> Result<User, SecretsError> {
         let user = try!(self.db.query_row_and_then("
-                SELECT username, public_key, public_sign, ssl_fingerprint,
-                       created, disabled
-                FROM users
-                WHERE username=?
+            SELECT username, public_key, public_sign, ssl_fingerprint,
+                   created, disabled
+            FROM users
+            WHERE username=?
             ",
             &[username],
               User::from_row));
@@ -146,9 +146,9 @@ impl SecretsServer {
                        service_name: &String)
                        -> Result<Service, SecretsError> {
         let service = try!(self.db.query_row_and_then("
-                SELECT service_name, created, modified, creator, modified_by
-                FROM services
-                WHERE service_name=?
+            SELECT service_name, created, modified, creator, modified_by
+            FROM services
+            WHERE service_name=?
             ",
             &[service_name],
             Service::from_row));
@@ -226,9 +226,9 @@ impl SecretsServer {
         }
 
         try!(trans.execute("
-                INSERT INTO services(service_name, created, modified,
-                                     creator, modified_by)
-                VALUES(?,?,?,?,?)
+            INSERT INTO services(service_name, created, modified,
+                                 creator, modified_by)
+            VALUES(?,?,?,?,?)
             ",
             &[&service.name,
               &service.created,
@@ -280,8 +280,8 @@ impl SecretsServer {
         let now = time::get_time().sec;
         let trans = try!(self.db.transaction());
         try!(trans.execute_batch("
-                CREATE TEMPORARY TABLE new_grants(grantee PRIMARY KEY)
-            "));
+            CREATE TEMPORARY TABLE new_grants(grantee PRIMARY KEY)
+        "));
         for &(ref grantee, ref ciphertext, ref signature) in grants {
             if grantee.disabled.is_some() {
                 return Err(SecretsError::Authentication("can't grant to \
@@ -294,14 +294,14 @@ impl SecretsServer {
                 return Err(SecretsError::Crypto(keys::CryptoError::CantDecrypt));
             }
             try!(trans.execute("
-                    INSERT INTO new_grants(grantee) VALUES(?)
+                INSERT INTO new_grants(grantee) VALUES(?)
                 ",
                 &[&grantee.username]));
             try!(trans.execute("
-                    INSERT OR REPLACE INTO grants(grantor, grantee,
-                                                  service_name, created,
-                                                  ciphertext, signature)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO grants(grantor, grantee,
+                                              service_name, created,
+                                              ciphertext, signature)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ",
                 &[&grantor.username,
                   &grantee.username,
@@ -310,13 +310,13 @@ impl SecretsServer {
                   *ciphertext,
                   &signature.as_ref()]));
             try!(trans.execute("
-                    UPDATE services SET modified=?, modified_by=?
+                UPDATE services SET modified=?, modified_by=?
                 ",
                 &[&now, &grantor.username]));
             try!(trans.execute_batch("
-                    DELETE FROM grants
-                    WHERE grantee NOT IN (SELECT grantee FROM new_grants);
-                "));
+                DELETE FROM grants
+                WHERE grantee NOT IN (SELECT grantee FROM new_grants);
+            "));
         }
         try!(trans.commit());
         return Ok(());
@@ -327,14 +327,14 @@ impl SecretsServer {
                      grantee_name: &String)
                      -> Result<Grant, SecretsError> {
         let grant = try!(self.db.query_row_and_then("
-                SELECT service_name, grantee, grantor, ciphertext, signature,
-                       created
-                FROM grants
-                WHERE service_name = ? AND grantee = ?
-             ",
-             &[service_name,
-               grantee_name],
-               Grant::from_row));
+            SELECT service_name, grantee, grantor, ciphertext, signature,
+                   created
+            FROM grants
+            WHERE service_name = ? AND grantee = ?
+            ",
+            &[service_name,
+              grantee_name],
+              Grant::from_row));
         // verify the signature on the grant
         let grantor = try!(self.get_user(&grant.grantor));
         if !sign::verify_detached(&grant.signature,
