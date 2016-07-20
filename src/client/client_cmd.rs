@@ -55,7 +55,15 @@ pub fn main() {
                 .required(true)))
         .subcommand(SubCommand::with_name("check-server"))
         .subcommand(SubCommand::with_name("client-info")
+            .about("show info about the client"))
+        .subcommand(SubCommand::with_name("server-info")
             .about("show info about the server"))
+        .subcommand(SubCommand::with_name("info")
+            .about("print out some info about a service")
+            .arg(Arg::with_name("service_name")
+                .index(1)
+                .takes_value(true)
+                .required(true)))
         .subcommand(SubCommand::with_name("create")
             .arg(Arg::with_name("service_name")
                 .index(1)
@@ -177,8 +185,8 @@ pub fn main() {
             let secret_value =
                 password::evaluate_password_source(secret_source).unwrap();
             instance.create_service(service_name.to_owned(),
-                                secret_value.to_owned(),
-                                grantees)
+                                    secret_value.to_owned(),
+                                    grantees)
                 .unwrap();
             exit(0);
         }
@@ -186,6 +194,28 @@ pub fn main() {
             let client_info = instance.get_peer_info().unwrap();
             println!("=== client info: ===\n{}",
                      client_info.printable_report().unwrap());
+        }
+        ("server-info", Some(_)) => {
+            let server_info = instance.get_server_info().unwrap();
+            println!("=== server info: ===\n{}",
+                     server_info.printable_report().unwrap());
+        }
+        ("info", Some(subargs)) => {
+            let service_name: String = subargs.value_of("service_name").unwrap().to_string();
+            let service = instance.get_service(service_name).unwrap();
+            println!("\
+                name: {}\n\
+                created: {}\n\
+                modified: {}\n\
+                creator: {}\n\
+                modified by:{}\
+                ",
+                service.name,
+                utils::pretty_date(service.created),
+                utils::pretty_date(service.modified),
+                service.creator,
+                service.modified_by
+            );
         }
         _ => unreachable!(),
     }

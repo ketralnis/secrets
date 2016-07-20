@@ -2,6 +2,7 @@ use std::io;
 use std::io::Write;
 
 use regex;
+use time;
 
 pub fn validate_host(name: &str, value: &str) -> Result<(), String> {
     return re_validator(name, r"[a-zA-Z0-9.-]+(:[0-9]{1,5})?", value);
@@ -47,6 +48,12 @@ pub fn constant_time_compare(actual: &[u8], expected: &[u8]) -> bool {
         res |= (actual[x] ^ expected[x % expected_len]) as usize;
     }
     return res == 0;
+}
+
+pub fn pretty_date(timestamp: i64) -> String {
+    let timespec = time::Timespec::new(timestamp, 0);
+    let tm = time::at(timespec);
+    return format!("{}", tm.rfc822z());
 }
 
 #[cfg(test)]

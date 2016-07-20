@@ -45,6 +45,7 @@ for new_user in dking florence; do
     sqlite3 tmp/$new_user.db .dump
 
     $CLIENT client-info
+    $CLIENT server-info
 
     echo "checking if we're accepted (this should fail)"
     ! $CLIENT check-server

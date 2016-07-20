@@ -326,6 +326,16 @@ impl SecretsClient {
 
         return Ok(());
     }
+
+    pub fn get_service(&self, service_name: String) -> Result<Service, SecretsError> {
+        let mut req = SecretsRequest::new(Method::Get, "/api/info");
+        req.add_arg("service", service_name.clone());
+
+        let mut api_response = try!(self.server_request(req));
+        let service = try!(api_response.services.remove(&service_name)
+            .ok_or(SecretsError::ClientError("service not found".to_string())));
+        return Ok(service);
+    }
 }
 
 fn http_path(host_str: &str, postfix: &str) -> String {
