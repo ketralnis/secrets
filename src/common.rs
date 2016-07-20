@@ -5,6 +5,7 @@ use std::io::Cursor;
 use std::io::Write;
 use std::path::Path;
 
+use chrono::UTC;
 use hyper;
 use openssl::crypto::hash::Type as HashType;
 use openssl::crypto::pkey::PKey;
@@ -22,7 +23,6 @@ use rustc_serialize::hex::{ToHex, FromHexError};
 use serde_json::Error as SerdeError;
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
-use time;
 use url::ParseError;
 
 use keys;
@@ -235,7 +235,7 @@ pub trait SecretsContainer {
         try!(conn.execute("
             INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
             VALUES(?, ?, ?, 0)",
-            &[&key_name, value, &time::get_time().sec]));
+            &[&key_name, value, &UTC::now().timestamp()]));
         Ok(())
     }
 
@@ -269,7 +269,7 @@ pub trait SecretsContainer {
         try!(db.execute("
             INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
             VALUES(?, ?, ?, 1)",
-            &[&key_name, &ciphertext, &time::get_time().sec]));
+            &[&key_name, &ciphertext, &UTC::now().timestamp()]));
         return Ok(());
     }
 }

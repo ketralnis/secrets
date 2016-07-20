@@ -208,7 +208,7 @@ pub fn main() {
                 created: {}\n\
                 modified: {}\n\
                 creator: {}\n\
-                modified by:{}\
+                modified by: {}\
                 ",
                 service.name,
                 utils::pretty_date(service.created),

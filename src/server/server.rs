@@ -1,9 +1,9 @@
 use std::path::Path;
 
+use chrono::UTC;
 use rusqlite;
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
-use time;
 
 use api::{User, Service, Grant, JoinRequest, PeerInfo};
 use common;
@@ -83,7 +83,7 @@ impl SecretsServer {
                    public_key: box_::PublicKey,
                    public_sign: sign::PublicKey)
                    -> Result<User, SecretsError> {
-        let now = time::get_time().sec;
+        let now = UTC::now().timestamp();
         try!(self.db.execute("
             INSERT INTO users(username, ssl_fingerprint,
                               public_key, public_sign,
@@ -175,7 +175,7 @@ impl SecretsServer {
         // the client has to create the timestamps in order to include them in
         // the signature, but we want them to be able to lie about them. So
         // check all of the timestamps and allow minimal slop
-        let now = time::get_time().sec;
+        let now = UTC::now().timestamp();
 
         // make sure we have the most up-to-date version
         let auth_user = try!(self.get_user(&auth_user.username));
@@ -277,7 +277,7 @@ impl SecretsServer {
                           -> Result<(), SecretsError> {
         // make sure the service exists
         let service = try!(self.get_service(&service_name));
-        let now = time::get_time().sec;
+        let now = UTC::now().timestamp();
         let trans = try!(self.db.transaction());
         try!(trans.execute_batch("
             CREATE TEMPORARY TABLE new_grants(grantee PRIMARY KEY)

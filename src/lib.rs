@@ -2,6 +2,7 @@
 #[macro_use(quick_error)] extern crate quick_error;
 #[macro_use] extern crate log;
 extern crate byteorder;
+extern crate chrono;
 extern crate clap;
 extern crate env_logger;
 extern crate flate2;
@@ -16,7 +17,6 @@ extern crate serde;
 extern crate serde_json;
 extern crate sodiumoxide;
 extern crate tempfile;
-extern crate time;
 extern crate url;
 
 mod common;

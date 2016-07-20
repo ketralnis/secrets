@@ -3,6 +3,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
+use chrono::UTC;
 use hyper::method::Method;
 use hyper::net::HttpsConnector;
 use hyper::net::Openssl;
@@ -23,7 +24,6 @@ use serde_json::from_reader as dejson_from_reader;
 use serde_json::ser::to_vec as json_to_vec;
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
-use time;
 use url::form_urlencoded::Serializer as QueryStringSerializer;
 
 use api::{ApiResponse, PeerInfo, JoinRequest, Service, Grant, ServiceCreator};
@@ -274,7 +274,7 @@ impl SecretsClient {
             return Err(SecretsError::ServiceAlreadyExists(service_name));
         }
 
-        let now = time::get_time().sec;
+        let now = UTC::now().timestamp();
         let username = try!(self.username());
         let (_, private_key) = try!(self.get_keys());
         let (_, private_sign) = try!(self.get_signs());
