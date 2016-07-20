@@ -66,8 +66,14 @@ CLIENT2="./target/debug/secrets-client -d ./tmp/client-florence.db -p pass:passw
 $CLIENT1 create twitter pass:twitterpass --grants=dking
 $CLIENT1 info twitter
 $CLIENT1 get twitter
+
 $CLIENT1 grant twitter florence
-$CLIENT1 info twitter
+
+$CLIENT1 bus-factor # tell me what services are in bus trouble
+$CLIENT1 bus-factor twitter
+
+# TODO better name for this
+$CLIENT who-knows twitter
 
 $CLIENT1 list --mine | grep twitter
 ! $CLIENT2 list --mine | grep twitter
