@@ -361,25 +361,18 @@ impl SecretsClient {
             .ok_or(SecretsError::ClientError("user not included".to_string())));
 
         // this may not be necessary. sodiumoxide uses authenticated
-        // encryption. so while the signature is here to make sure that the
+        // encryption so while the signature is here to make sure that the
         // grantor is really the one that made this secret, it's possible that
         // the user doesn't really care where the secret came from. the server
         // checks the signature on saving the Grant, so if the server is
         // trusted this is doubly unnecessary. Still, it doesn't hurt
-        let signable = grant._signable();
-        if !sign::verify_detached(&grant.signature,
-                                  &signable,
-                                  &grantor.public_sign) {
-            return Err(SecretsError::Crypto(keys::CryptoError::CantDecrypt));
-        }
+        try!(grant.verify_signature(&grantor.public_sign));
 
-        let decrypted = try!(keys::decrypt_from(&grant.ciphertext,
-                                                &grantor.public_key,
-                                                &private_key));
+        let plaintext = try!(grant.decrypt(&grantor.public_key, &private_key));
 
         let decrypted_grant = DecryptedGrant {
             grant: grant,
-            plaintext: decrypted
+            plaintext: plaintext
         };
 
         return Ok(decrypted_grant);

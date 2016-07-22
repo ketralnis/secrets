@@ -23,6 +23,7 @@ use sodiumoxide::crypto::hash::sha256;
 
 use common::SecretsError;
 use keys::CryptoError;
+use keys;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -134,6 +135,26 @@ impl Grant {
                               self.created);
     }
 
+    pub fn verify_signature(&self, grantor_public_sign: &sign::PublicKey) -> Result<(), CryptoError> {
+        let signable = self._signable();
+        if !sign::verify_detached(&self.signature,
+                                  &signable,
+                                  grantor_public_sign) {
+            return Err(CryptoError::CantDecrypt);
+        }
+        return Ok(());
+    }
+
+    pub fn decrypt(&self,
+                   grantee_public_key: &box_::PublicKey,
+                   grantor_private_key: &box_::SecretKey)
+                   -> Result<Vec<u8>, CryptoError> {
+        let decrypted = try!(keys::decrypt_from(&self.ciphertext,
+                                                &grantee_public_key,
+                                                &grantor_private_key));
+        return Ok(decrypted);
+    }
+
     pub fn key(&self) -> String {
         return Self::key_for(&self.service_name, &self.grantee);
     }
@@ -144,7 +165,6 @@ impl Grant {
 
     pub fn split_key(key: &str) -> (String, String) {
         let splitted: Vec<&str> = key.splitn(2, "::")
-            // .map(|s| s.to_string())
             .collect();
         return (splitted[0].to_string(), splitted[1].to_string());
     }

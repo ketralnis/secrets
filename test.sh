@@ -69,7 +69,7 @@ $CLIENT1 info twitter | grep dking
 $CLIENT1 get twitter
 $CLIENT1 get twitter | grep twitterpass
 
-$CLIENT1 grant twitter florence
+$CLIENT1 grant twitter --to=florence
 
 $CLIENT1 bus-factor # tell me what services are in bus trouble
 $CLIENT1 bus-factor twitter
