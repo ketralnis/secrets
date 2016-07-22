@@ -64,6 +64,12 @@ pub fn main() {
                 .index(1)
                 .takes_value(true)
                 .required(true)))
+        .subcommand(SubCommand::with_name("get")
+            .about("get the current secret value for a service")
+            .arg(Arg::with_name("service_name")
+                .index(1)
+                .takes_value(true)
+                .required(true)))
         .subcommand(SubCommand::with_name("create")
             .arg(Arg::with_name("service_name")
                 .index(1)
@@ -217,6 +223,15 @@ pub fn main() {
                 service.modified_by
             );
         }
+        ("get", Some(subargs)) => {
+            let service_name: String = subargs.value_of("service_name").unwrap().to_string();
+            let grant = instance.get_grant(&service_name).unwrap();
+
+            println!("grant: {:?}", grant);
+
+            unreachable!();
+        }
+
         _ => unreachable!(),
     }
 }

@@ -1,7 +1,7 @@
 use std::io;
 use std::io::Write;
 
-use chrono::{UTC, TimeZone, Local};
+use chrono::{Local, TimeZone};
 use regex;
 
 pub fn validate_host(name: &str, value: &str) -> Result<(), String> {

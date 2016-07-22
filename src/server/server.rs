@@ -256,6 +256,17 @@ impl SecretsServer {
                 .to_string()));
         }
 
+        let signable = Grant::signable(&grant.grantee,
+                                       &grant.grantor,
+                                       &service.name,
+                                       &grant.ciphertext,
+                                       grant.created);
+        if !sign::verify_detached(&grant.signature,
+                                  &signable,
+                                  &auth_user.public_sign) {
+            return Err(SecretsError::Crypto(keys::CryptoError::CantDecrypt));
+        }
+
         try!(trans.execute("
             INSERT INTO grants(service_name, grantor, grantee, ciphertext,
                         signature, created)
@@ -287,7 +298,6 @@ impl SecretsServer {
                 return Err(SecretsError::Authentication("can't grant to \
                                                          disabled user"));
             }
-            // make sure the signature matches
             if !sign::verify_detached(&signature,
                                       ciphertext,
                                       &grantor.public_sign) {
@@ -337,9 +347,16 @@ impl SecretsServer {
               Grant::from_row));
         // verify the signature on the grant
         let grantor = try!(self.get_user(&grant.grantor));
+        // make sure the signature matches
+        let signable = Grant::signable(&grant.grantee,
+                                       &grant.grantor,
+                                       &grant.service_name,
+                                       &grant.ciphertext,
+                                       grant.created);
         if !sign::verify_detached(&grant.signature,
-                                  &grant.ciphertext,
+                                  &signable,
                                   &grantor.public_sign) {
+            println!("{:?}, {:?}", grant, grantor);
             return Err(SecretsError::Crypto(keys::CryptoError::CantDecrypt));
         }
         return Ok(grant);

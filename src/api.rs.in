@@ -127,10 +127,10 @@ impl Grant {
     }
 
     pub fn key(&self) -> String {
-        return Self::make_key(&self.service_name, &self.grantee);
+        return Self::key_for(&self.service_name, &self.grantee);
     }
 
-    pub fn make_key(service_name: &str, grantee: &str) -> String {
+    pub fn key_for(service_name: &str, grantee: &str) -> String {
         return format!("{}::{}", service_name, grantee);
     }
 

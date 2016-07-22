@@ -65,7 +65,9 @@ CLIENT2="./target/debug/secrets-client -d ./tmp/client-florence.db -p pass:passw
 
 $CLIENT1 create twitter pass:twitterpass --grants=dking
 $CLIENT1 info twitter
+$CLIENT1 info twitter | grep dking
 $CLIENT1 get twitter
+$CLIENT1 get twitter | grep twitterpass
 
 $CLIENT1 grant twitter florence
 

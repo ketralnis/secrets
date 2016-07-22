@@ -332,9 +332,31 @@ impl SecretsClient {
         req.add_arg("service", service_name.clone());
 
         let mut api_response = try!(self.server_request(req));
+
         let service = try!(api_response.services.remove(&service_name)
             .ok_or(SecretsError::ClientError("service not found".to_string())));
         return Ok(service);
+    }
+
+    pub fn get_grant(&self, service_name: &String) -> Result<Grant, SecretsError> {
+        let username = try!(self.username());
+
+        let mut req = SecretsRequest::new(Method::Get, "/api/info");
+        req.add_arg("service", service_name.clone());
+        req.add_arg("grant", Grant::key_for(&service_name, &username));
+
+        let mut api_response = try!(self.server_request(req));
+
+        // mostly just make sure the service exists
+        let service = try!(api_response.services.remove(service_name)
+            .ok_or(SecretsError::ClientError("service not found".to_string())));
+
+        let mut service_block = try!(api_response.grants.remove(service_name)
+            .ok_or(SecretsError::ClientError("grant not found".to_string())));
+        let grant = try!(service_block.remove(&username)
+            .ok_or(SecretsError::ClientError("grant not found".to_string())));
+
+        return Ok(grant);
     }
 }
 
