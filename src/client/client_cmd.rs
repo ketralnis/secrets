@@ -225,11 +225,10 @@ pub fn main() {
         }
         ("get", Some(subargs)) => {
             let service_name: String = subargs.value_of("service_name").unwrap().to_string();
-            let grant = instance.get_grant(&service_name).unwrap();
+            let decrypted_grant = instance.get_grant(&service_name).unwrap();
 
-            println!("grant: {:?}", grant);
-
-            unreachable!();
+            io::stdout().write(&decrypted_grant.plaintext).unwrap();
+            io::stdout().write(b"\n").unwrap();
         }
 
         _ => unreachable!(),

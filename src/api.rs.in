@@ -126,6 +126,14 @@ impl Grant {
         ret
     }
 
+    pub fn _signable(&self) -> Vec<u8> {
+        return Self::signable(&self.grantee,
+                              &self.grantee,
+                              &self.service_name,
+                              &self.ciphertext,
+                              self.created);
+    }
+
     pub fn key(&self) -> String {
         return Self::key_for(&self.service_name, &self.grantee);
     }
@@ -140,6 +148,12 @@ impl Grant {
             .collect();
         return (splitted[0].to_string(), splitted[1].to_string());
     }
+}
+
+#[derive(Debug)]
+pub struct DecryptedGrant {
+    pub grant: Grant,
+    pub plaintext: Vec<u8>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

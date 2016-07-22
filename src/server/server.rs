@@ -256,11 +256,7 @@ impl SecretsServer {
                 .to_string()));
         }
 
-        let signable = Grant::signable(&grant.grantee,
-                                       &grant.grantor,
-                                       &service.name,
-                                       &grant.ciphertext,
-                                       grant.created);
+        let signable = grant._signable();
         if !sign::verify_detached(&grant.signature,
                                   &signable,
                                   &auth_user.public_sign) {

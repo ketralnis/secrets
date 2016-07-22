@@ -26,7 +26,8 @@ use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
 use url::form_urlencoded::Serializer as QueryStringSerializer;
 
-use api::{ApiResponse, PeerInfo, JoinRequest, Service, Grant, ServiceCreator};
+use api::{ApiResponse, PeerInfo, JoinRequest, Service, Grant, ServiceCreator,
+          DecryptedGrant};
 use common;
 use common::SecretsContainer;
 use common::SecretsError;
@@ -338,13 +339,13 @@ impl SecretsClient {
         return Ok(service);
     }
 
-    pub fn get_grant(&self, service_name: &String) -> Result<Grant, SecretsError> {
+    pub fn get_grant(&self, service_name: &String) -> Result<DecryptedGrant, SecretsError> {
         let username = try!(self.username());
+        let (_, private_key) = try!(self.get_keys());
 
         let mut req = SecretsRequest::new(Method::Get, "/api/info");
         req.add_arg("service", service_name.clone());
         req.add_arg("grant", Grant::key_for(&service_name, &username));
-
         let mut api_response = try!(self.server_request(req));
 
         // mostly just make sure the service exists
@@ -356,7 +357,32 @@ impl SecretsClient {
         let grant = try!(service_block.remove(&username)
             .ok_or(SecretsError::ClientError("grant not found".to_string())));
 
-        return Ok(grant);
+        let grantor = try!(api_response.users.remove(&grant.grantor)
+            .ok_or(SecretsError::ClientError("user not included".to_string())));
+
+        // this may not be necessary. sodiumoxide uses authenticated
+        // encryption. so while the signature is here to make sure that the
+        // grantor is really the one that made this secret, it's possible that
+        // the user doesn't really care where the secret came from. the server
+        // checks the signature on saving the Grant, so if the server is
+        // trusted this is doubly unnecessary. Still, it doesn't hurt
+        let signable = grant._signable();
+        if !sign::verify_detached(&grant.signature,
+                                  &signable,
+                                  &grantor.public_sign) {
+            return Err(SecretsError::Crypto(keys::CryptoError::CantDecrypt));
+        }
+
+        let decrypted = try!(keys::decrypt_from(&grant.ciphertext,
+                                                &grantor.public_key,
+                                                &private_key));
+
+        let decrypted_grant = DecryptedGrant {
+            grant: grant,
+            plaintext: decrypted
+        };
+
+        return Ok(decrypted_grant);
     }
 }
 
