@@ -310,11 +310,9 @@ impl SecretsServer {
             try!(Self::_create_grant(&trans, now, &auth_user,
                                      &service, grant));
         }
-        try!(Self::_touch_service(&trans, now, &auth_user, &service));
         try!(trans.commit());
         return Ok(());
     }
-
 
     pub fn rotate_service(&mut self,
                           service_name: String,
