@@ -1,5 +1,6 @@
-use std::io;
+use std::collections::HashMap;
 use std::io::Write;
+use std::io;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -26,8 +27,8 @@ use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
 use url::form_urlencoded::Serializer as QueryStringSerializer;
 
-use api::{ApiResponse, PeerInfo, JoinRequest, Service, Grant, ServiceCreator,
-          DecryptedGrant};
+use api::{ApiResponse, PeerInfo, JoinRequest, Service, Grant,
+          ServiceCreateRequest, GrantRequest, User};
 use common;
 use common::SecretsContainer;
 use common::SecretsError;
@@ -196,7 +197,7 @@ impl SecretsClient {
             try!(self.get_global::<String>("server_fingerprint"));
         let server_cn = try!(self.get_global::<String>("server_cn"));
         ssl_context.set_verify_with_data(SSL_VERIFY_PEER,
-                                         verify_fingerprint,
+                                         verify_ssl_fingerprint,
                                          (server_fingerprint, server_cn));
 
         let ssl = Openssl { context: Arc::new(ssl_context) };
@@ -259,7 +260,7 @@ impl SecretsClient {
 
     pub fn create_service(&mut self,
                           service_name: String,
-                          plaintext: String,
+                          plaintext: Vec<u8>,
                           grantees: Vec<String>)
                           -> Result<(), SecretsError> {
         // make sure the service doesn't exist and look up the users that we'll
@@ -277,8 +278,6 @@ impl SecretsClient {
 
         let now = UTC::now().timestamp();
         let username = try!(self.username());
-        let (_, private_key) = try!(self.get_keys());
-        let (_, private_sign) = try!(self.get_signs());
 
         let service = Service {
             name: service_name.clone(),
@@ -288,34 +287,13 @@ impl SecretsClient {
             modified_by: username.clone(),
         };
 
-        let mut grants = vec![];
+        let grants = try!(self._create_grants(plaintext,
+                                              &service_name,
+                                              now,
+                                              grantees,
+                                              api_response.users));
 
-        for grantee_name in grantees {
-            if let Some(grantee) = api_response.users.get(&grantee_name) {
-                let ciphertext = try!(keys::encrypt_to(&plaintext.as_bytes(),
-                                                       &private_key,
-                                                       &grantee.public_key));
-                let signable = Grant::signable(&grantee_name,
-                                               &username,
-                                               &service_name,
-                                               &ciphertext,
-                                               now);
-                let signature = sign::sign_detached(&signable, &private_sign);
-                let grant = Grant {
-                    grantee: grantee_name.clone(),
-                    grantor: username.clone(),
-                    service_name: service_name.clone(),
-                    ciphertext: ciphertext,
-                    created: now,
-                    signature: signature,
-                };
-                grants.push(grant);
-            } else {
-                return Err(SecretsError::UserDoesntExist(grantee_name));
-            }
-        }
-
-        let service_creator = ServiceCreator {
+        let service_creator = ServiceCreateRequest {
             service: service,
             grants: grants,
         };
@@ -326,6 +304,40 @@ impl SecretsClient {
         try!(self.server_request(create_req));
 
         return Ok(());
+    }
+
+    fn _create_grants(&self,
+                      plaintext: Vec<u8>,
+                      service_name: &String,
+                      now: i64,
+                      grantee_names: Vec<String>,
+                      grantee_map: HashMap<String, User>)
+                    -> Result<Vec<Grant>, SecretsError> {
+        let username = try!(self.username());
+        let (_, private_key) = try!(self.get_keys());
+        let (public_sign, private_sign) = try!(self.get_signs());
+        let mut grants = vec![];
+
+        for grantee_name in grantee_names {
+            if let Some(grantee) = grantee_map.get(&grantee_name) {
+                let grant = try!(Grant::create(grantee_name,
+                                               username.clone(),
+                                               service_name.clone(),
+                                               &plaintext,
+                                               now,
+                                               &private_key,
+                                               &grantee.public_key,
+                                               &private_sign));
+                // make sure the signature checks out to catch sig issues
+                // earlier in the process
+                debug_assert!(grant.verify_signature(&public_sign).is_ok());
+                grants.push(grant);
+            } else {
+                return Err(SecretsError::UserDoesntExist(grantee_name));
+            }
+        }
+
+        return Ok(grants);
     }
 
     pub fn get_service(&self, service_name: String) -> Result<Service, SecretsError> {
@@ -341,15 +353,15 @@ impl SecretsClient {
 
     pub fn get_grant(&self, service_name: &String) -> Result<DecryptedGrant, SecretsError> {
         let username = try!(self.username());
-        let (_, private_key) = try!(self.get_keys());
 
         let mut req = SecretsRequest::new(Method::Get, "/api/info");
         req.add_arg("service", service_name.clone());
         req.add_arg("grant", Grant::key_for(&service_name, &username));
+
         let mut api_response = try!(self.server_request(req));
 
-        // mostly just make sure the service exists
-        let service = try!(api_response.services.remove(service_name)
+        // just make sure the service exists
+        try!(api_response.services.remove(service_name)
             .ok_or(SecretsError::ClientError("service not found".to_string())));
 
         let mut service_block = try!(api_response.grants.remove(service_name)
@@ -360,22 +372,76 @@ impl SecretsClient {
         let grantor = try!(api_response.users.remove(&grant.grantor)
             .ok_or(SecretsError::ClientError("user not included".to_string())));
 
-        // this may not be necessary. sodiumoxide uses authenticated
+        let decrypted = try!(self._decrypt_grant(grant, grantor));
+
+        return Ok(decrypted);
+    }
+
+    fn _decrypt_grant(&self, grant: Grant, grantor: User) -> Result<DecryptedGrant, SecretsError> {
+        let (_, private_key) = try!(self.get_keys());
+
+        // verify_signature may not be necessary. sodiumoxide uses authenticated
         // encryption so while the signature is here to make sure that the
         // grantor is really the one that made this secret, it's possible that
         // the user doesn't really care where the secret came from. the server
-        // checks the signature on saving the Grant, so if the server is
-        // trusted this is doubly unnecessary. Still, it doesn't hurt
+        // checks the signature on saving the Grant, so if the server is trusted
+        // this is doubly unnecessary. Still, it doesn't hurt
         try!(grant.verify_signature(&grantor.public_sign));
 
         let plaintext = try!(grant.decrypt(&grantor.public_key, &private_key));
-
         let decrypted_grant = DecryptedGrant {
             grant: grant,
             plaintext: plaintext
         };
-
         return Ok(decrypted_grant);
+    }
+
+    pub fn add_grants(&self, service_name: String, grantees: Vec<String>)
+                      -> Result<(), SecretsError> {
+        let now = UTC::now().timestamp();
+        let username = try!(self.username());
+
+        // first pull down the service, our grant, and the public keys of all of
+        // our new grantees
+        let grant_key = Grant::key_for(&service_name, &username);
+        let mut req = SecretsRequest::new(Method::Get, "/api/info");
+        req.add_arg("service", service_name.clone());
+        req.add_arg("grant", grant_key);
+        for ref grantee_name in &grantees {
+            req.add_arg("user", (*grantee_name).clone());
+        }
+        let mut api_response = try!(self.server_request(req));
+
+        let mut service_block = try!(api_response.grants.remove(&service_name)
+            .ok_or(SecretsError::ClientError("grant not found".to_string())));
+        let grant = try!(service_block.remove(&username)
+            .ok_or(SecretsError::ClientError("grant not found".to_string())));
+
+        // we didn't ask for this, but the server will automatically add it in
+        // because we asked for the grant
+        let grantor = try!(api_response.users.get(&grant.grantor)
+            .ok_or(SecretsError::ClientError("user not included".to_string())))
+            .clone();
+
+        let decrypted_grant = try!(self._decrypt_grant(grant, grantor));
+
+        let grants = try!(self._create_grants(decrypted_grant.plaintext,
+                                              &service_name,
+                                              now,
+                                              grantees,
+                                              api_response.users));
+
+        let granter = GrantRequest {
+            service_name: service_name,
+            grants: grants,
+        };
+
+        let mut add_grants_req = SecretsRequest::new(Method::Post,
+                                                     "/api/grant");
+        try!(add_grants_req.set_json(granter));
+        try!(self.server_request(add_grants_req));
+
+        return Ok(());
     }
 }
 
@@ -385,6 +451,12 @@ fn http_path(host_str: &str, postfix: &str) -> String {
     ret.push_str(host_str);
     ret.push_str(postfix);
     ret
+}
+
+#[derive(Debug)]
+pub struct DecryptedGrant {
+    pub grant: Grant,
+    pub plaintext: Vec<u8>,
 }
 
 struct SecretsRequest {
@@ -416,7 +488,7 @@ impl SecretsRequest {
     }
 }
 
-pub fn verify_fingerprint(_preverify_ok: bool,
+fn verify_ssl_fingerprint(_preverify_ok: bool,
                           x509_ctx: &X509StoreContext,
                           expected_values: &(String, String))
                           -> bool {

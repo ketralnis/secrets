@@ -7,7 +7,7 @@ mkdir tmp
 
 export RUST_BACKTRACE=1
 
-cargo test # in test mode
+cargo test
 cargo build # in dev mode
 
 export RUST_LOG=debug
@@ -38,7 +38,7 @@ curl --insecure https://$(hostname):4430/api/server; echo ''
 for new_user in dking florence; do
     echo creating user $new_user
 
-    CLIENT="./target/debug/secrets-client -d ./tmp/client-$new_user.db -p pass:password_$new_user"
+    CLIENT="./target/debug/secrets-client -d ./tmp/client-${new_user}.db -p pass:password_${new_user}"
 
     yes | $CLIENT join -u $new_user -h $(hostname):4430 > tmp/$new_user.request
     cat tmp/$new_user.request
@@ -69,13 +69,17 @@ $CLIENT1 info twitter | grep dking
 $CLIENT1 get twitter
 $CLIENT1 get twitter | grep twitterpass
 
-$CLIENT1 grant twitter --to=florence
+$CLIENT1 grant twitter florence
+$CLIENT1 grant twitter florence,dking # dking is implied
 
-$CLIENT1 bus-factor # tell me what services are in bus trouble
+# tell me what services are in bus trouble
+$CLIENT1 bus-factor
 $CLIENT1 bus-factor twitter
 
-# TODO better name for this
-$CLIENT who-knows twitter
+# some installs may want there to be a special user that knows all of the
+# secrets for administrative reasons. this prints out all secrets not held by
+# the provided admin user
+$CLIENT1 admin-check dking
 
 $CLIENT1 list --mine | grep twitter
 ! $CLIENT2 list --mine | grep twitter
@@ -83,8 +87,8 @@ $CLIENT1 list --mine | grep twitter
 $CLIENT1 list --all | grep twitter
 $CLIENT2 list --all | grep twitter
 
-$CLIENT1 info twitter | grep florence
-$CLIENT1 info twitter | grep dking
+$CLIENT1 grants twitter | grep florence
+$CLIENT1 grants twitter | grep dking
 
 $CLIENT1 user-info florence | grep twitter
 $CLIENT1 user-info dking | grep twitter

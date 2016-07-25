@@ -132,7 +132,6 @@ pub fn evaluate_password_source(source: PasswordSource)
                 let newlen = inputted.len() - 1;
                 inputted.truncate(newlen);
             }
-
             let password = try!(String::from_utf8(inputted));
             Ok(password)
         }

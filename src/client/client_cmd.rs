@@ -70,7 +70,18 @@ pub fn main() {
                 .index(1)
                 .takes_value(true)
                 .required(true)))
+        .subcommand(SubCommand::with_name("grant")
+            .about("grant someone access to an existing service")
+            .arg(Arg::with_name("service_name")
+                .index(1)
+                .takes_value(true)
+                .required(true))
+            .arg(Arg::with_name("grantees")
+                .index(2)
+                .takes_value(true)
+                .required(true)))
         .subcommand(SubCommand::with_name("create")
+            .about("create a new service")
             .arg(Arg::with_name("service_name")
                 .index(1)
                 .takes_value(true)
@@ -190,8 +201,9 @@ pub fn main() {
                 .unwrap();
             let secret_value =
                 password::evaluate_password_source(secret_source).unwrap();
+            let secret_value = secret_value.as_bytes().to_owned();
             instance.create_service(service_name.to_owned(),
-                                    secret_value.to_owned(),
+                                    secret_value,
                                     grantees)
                 .unwrap();
             exit(0);
@@ -220,7 +232,7 @@ pub fn main() {
                 utils::pretty_date(service.created),
                 utils::pretty_date(service.modified),
                 service.creator,
-                service.modified_by
+                service.modified_by,
             );
         }
         ("get", Some(subargs)) => {
@@ -229,6 +241,13 @@ pub fn main() {
 
             io::stdout().write(&decrypted_grant.plaintext).unwrap();
             io::stdout().write(b"\n").unwrap();
+        },
+        ("grant", Some(subargs)) => {
+            let service_name: String = subargs.value_of("service_name").unwrap().to_string();
+            let grantees: String = subargs.value_of("grantees").unwrap().to_string();
+            let grantees: Vec<String> = grantees.split(",").map(|s|s.to_owned()).collect();
+
+            instance.add_grants(service_name, grantees).unwrap();
         }
 
         _ => unreachable!(),

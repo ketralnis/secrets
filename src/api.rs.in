@@ -91,6 +91,33 @@ pub struct Grant {
 }
 
 impl Grant {
+    pub fn create(grantee: String,
+                  grantor: String,
+                  service_name: String,
+                  plaintext: &Vec<u8>,
+                  created: i64,
+                  from_key: &box_::SecretKey,
+                  to_key: &box_::PublicKey,
+                  from_sign: &sign::SecretKey)
+                  -> Result<Self, SecretsError> {
+        let ciphertext = try!(keys::encrypt_to(plaintext, from_key, to_key));
+        let signable = Self::signable(&grantee,
+                                      &grantor,
+                                      &service_name,
+                                      &ciphertext,
+                                      created);
+        let signature = sign::sign_detached(&signable, &from_sign);
+        let grant = Grant {
+            grantee: grantee,
+            grantor: grantor,
+            service_name: service_name,
+            ciphertext: ciphertext,
+            created: created,
+            signature: signature,
+        };
+        return Ok(grant);
+    }
+
     pub fn from_row(row: rusqlite::Row) -> Result<Self, SecretsError> {
         let sig: Vec<u8> = row.get("signature");
         let signature = try!(sign::Signature::from_slice(&sig)
@@ -107,12 +134,12 @@ impl Grant {
         Ok(u)
     }
 
-    pub fn signable(grantee: &String,
-                    grantor: &String,
-                    service_name: &String,
-                    ciphertext: &[u8],
-                    created: i64)
-                    -> Vec<u8> {
+    fn signable(grantee: &String,
+                grantor: &String,
+                service_name: &String,
+                ciphertext: &[u8],
+                created: i64)
+                -> Vec<u8> {
         let mut ret: Vec<u8> = vec![];
         ret.extend_from_slice(&grantee.as_bytes());
         ret.extend_from_slice(&b","[..]);
@@ -127,9 +154,9 @@ impl Grant {
         ret
     }
 
-    pub fn _signable(&self) -> Vec<u8> {
+    fn _signable(&self) -> Vec<u8> {
         return Self::signable(&self.grantee,
-                              &self.grantee,
+                              &self.grantor,
                               &self.service_name,
                               &self.ciphertext,
                               self.created);
@@ -168,12 +195,6 @@ impl Grant {
             .collect();
         return (splitted[0].to_string(), splitted[1].to_string());
     }
-}
-
-#[derive(Debug)]
-pub struct DecryptedGrant {
-    pub grant: Grant,
-    pub plaintext: Vec<u8>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -273,14 +294,14 @@ impl JoinRequest {
 
 /// A request from the client to create a service
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServiceCreator {
+pub struct ServiceCreateRequest {
     pub service: Service,
     pub grants: Vec<Grant>,
 }
 
-/// A request from the client to rotate a secret
+/// A request from the client to add grants to or rotate a secret
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Rotator {
+pub struct GrantRequest {
     pub service_name: String,
     pub grants: Vec<Grant>,
 }

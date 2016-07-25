@@ -256,16 +256,11 @@ impl SecretsServer {
                 .to_string()));
         }
 
-        let signable = grant._signable();
-        if !sign::verify_detached(&grant.signature,
-                                  &signable,
-                                  &auth_user.public_sign) {
-            return Err(SecretsError::Crypto(keys::CryptoError::CantDecrypt));
-        }
+        try!(grant.verify_signature(&auth_user.public_sign));
 
         try!(trans.execute("
             INSERT INTO grants(service_name, grantor, grantee, ciphertext,
-                        signature, created)
+                               signature, created)
             VALUES (?,?,?,?,?,?)
             ",
             &[&grant.service_name,
@@ -273,7 +268,7 @@ impl SecretsServer {
               &grant.grantee,
               &grant.ciphertext,
               &grant.signature.as_ref(),
-              &now]));
+              &grant.created]));
         Ok(())
     }
 
@@ -338,23 +333,13 @@ impl SecretsServer {
             FROM grants
             WHERE service_name = ? AND grantee = ?
             ",
-            &[service_name,
-              grantee_name],
-              Grant::from_row));
-        // verify the signature on the grant
+            &[service_name, grantee_name],
+            Grant::from_row));
+
+        // verify the signature so we don't return invalid grants
         let grantor = try!(self.get_user(&grant.grantor));
-        // make sure the signature matches
-        let signable = Grant::signable(&grant.grantee,
-                                       &grant.grantor,
-                                       &grant.service_name,
-                                       &grant.ciphertext,
-                                       grant.created);
-        if !sign::verify_detached(&grant.signature,
-                                  &signable,
-                                  &grantor.public_sign) {
-            println!("{:?}, {:?}", grant, grantor);
-            return Err(SecretsError::Crypto(keys::CryptoError::CantDecrypt));
-        }
+        try!(grant.verify_signature(&grantor.public_sign));
+
         return Ok(grant);
     }
 
@@ -449,21 +434,21 @@ mod tests {
         let (d_public_key, _d_private_key) = box_::gen_keypair();
         let (d_public_sign, _d_private_sign) = sign::gen_keypair();
         let david = server.create_user("david".to_string(),
-                         "david_fingerprint".to_string(),
-                         d_public_key,
-                         d_public_sign)
+                                       "david_fingerprint".to_string(),
+                                       d_public_key,
+                                       d_public_sign)
             .unwrap();
         let authenticated = server.authenticate(&"david".to_string(),
-                          &"david_fingerprint".to_string())
+                                                &"david_fingerprint".to_string())
             .unwrap();
         assert_eq!(david.username, authenticated.username);
 
         let (f_public_key, _f_private_key) = box_::gen_keypair();
         let (f_public_sign, _f_private_sign) = sign::gen_keypair();
         let _florence = server.create_user("florence".to_string(),
-                         "florence_fingerprint".to_string(),
-                         f_public_key,
-                         f_public_sign)
+                                           "florence_fingerprint".to_string(),
+                                           f_public_key,
+                                           f_public_sign)
             .unwrap();
     }
 }

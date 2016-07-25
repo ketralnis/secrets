@@ -24,7 +24,7 @@ use serde_json::de::from_reader as dejson_from_reader;
 use serde_json::ser::to_vec as json_to_vec;
 use url::form_urlencoded::parse as parse_qs;
 
-use api::{User, Grant, ApiResponse, ServiceCreator};
+use api::{User, Grant, ApiResponse, ServiceCreateRequest};
 use common::SecretsContainer;
 use common::SecretsError;
 use server::server::SecretsServer;
@@ -111,9 +111,9 @@ impl ServerHandler {
         }
 
         // ======== POST ========
+
         if url_matches(&request, Method::Post, "/api/create-service") {
-            // let body =
-            let create_req: ServiceCreator =
+            let create_req: ServiceCreateRequest =
                 try!(dejson_from_reader(&mut request));
             let service = create_req.service;
             let grants = create_req.grants;
