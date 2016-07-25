@@ -24,7 +24,7 @@ use serde_json::de::from_reader as dejson_from_reader;
 use serde_json::ser::to_vec as json_to_vec;
 use url::form_urlencoded::parse as parse_qs;
 
-use api::{User, Grant, ApiResponse, ServiceCreateRequest};
+use api::{User, Grant, ApiResponse, ServiceCreateRequest, GrantRequest};
 use common::SecretsContainer;
 use common::SecretsError;
 use server::server::SecretsServer;
@@ -128,6 +128,17 @@ impl ServerHandler {
             return Ok((StatusCode::Ok, api));
         }
 
+        if url_matches(&request, Method::Post, "/api/grant") {
+            let grant_req: GrantRequest =
+                try!(dejson_from_reader(&mut request));
+            let service_name = grant_req.service_name;
+            let grants = grant_req.grants;
+
+            // the server will do the authenticating
+            try!(instance.add_grants(&auth_user, &service_name, grants));
+
+            return Ok((StatusCode::Ok, api));
+        }
         return Ok((StatusCode::NotFound, api));
     }
 

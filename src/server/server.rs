@@ -259,8 +259,9 @@ impl SecretsServer {
         try!(grant.verify_signature(&auth_user.public_sign));
 
         try!(trans.execute("
-            INSERT INTO grants(service_name, grantor, grantee, ciphertext,
-                               signature, created)
+            INSERT OR IGNORE -- TODO ignore is best?
+            INTO grants(service_name, grantor, grantee, ciphertext,
+                        signature, created)
             VALUES (?,?,?,?,?,?)
             ",
             &[&grant.service_name,
@@ -271,6 +272,49 @@ impl SecretsServer {
               &grant.created]));
         Ok(())
     }
+
+    fn _touch_service(trans: &rusqlite::Transaction,
+                      now: i64,
+                      auth_user: &User,
+                      service: &Service)
+                      -> Result<(), SecretsError> {
+        try!(trans.execute("
+            UPDATE services
+            SET modified_by=?, modified=?
+            WHERE service_name=?
+            ",
+            &[&auth_user.username,
+              &now,
+              &service.name]));
+        return Ok(());
+    }
+
+    pub fn add_grants(&mut self,
+                      auth_user: &User,
+                      service_name: &String,
+                      grants: Vec<Grant>)
+                      -> Result<(), SecretsError> {
+        let service = try!(self.get_service(service_name));
+        let now = UTC::now().timestamp();
+
+        // make sure we have the most up-to-date version
+        let auth_user = try!(self.get_user(&auth_user.username));
+
+        // make sure that they actually hold the password that they are adding
+        // additional grants for. If they don't, they should be rotating instead
+        // and it's important that we enforce that difference
+        let _: Grant = try!(self.get_grant(service_name, &auth_user.username));
+
+        let trans = try!(self.db.transaction());
+        for grant in grants {
+            try!(Self::_create_grant(&trans, now, &auth_user,
+                                     &service, grant));
+        }
+        try!(Self::_touch_service(&trans, now, &auth_user, &service));
+        try!(trans.commit());
+        return Ok(());
+    }
+
 
     pub fn rotate_service(&mut self,
                           service_name: String,
