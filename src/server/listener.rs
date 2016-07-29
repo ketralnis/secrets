@@ -164,6 +164,19 @@ impl ServerHandler {
 
             return Ok((StatusCode::Ok, api));
         }
+
+        if url_matches(&request, Method::Post, "/api/rotate") {
+            let rotate_req: GrantRequest =
+                try!(dejson_from_reader(&mut request));
+            let service_name = rotate_req.service_name;
+            let grants = rotate_req.grants;
+
+            // the server will do the authenticating
+            try!(instance.rotate_service(&auth_user, &service_name, grants));
+
+            return Ok((StatusCode::Ok, api));
+        }
+
         return Ok((StatusCode::NotFound, api));
     }
 

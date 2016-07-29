@@ -255,6 +255,9 @@ impl SecretsServer {
             return Err(SecretsError::ServerError("malformed request"
                 .to_string()));
         }
+        if auth_user.disabled.is_some() {
+            return Err(SecretsError::Authentication("disabled user can't grant"));
+        }
 
         try!(grant.verify_signature(&auth_user.public_sign));
 
@@ -339,53 +342,34 @@ impl SecretsServer {
     }
 
     pub fn rotate_service(&mut self,
-                          service_name: String,
-                          grantor: &User,
-                          grants: &[(&User, &Vec<u8>, &sign::Signature)])
+                          auth_user: &User,
+                          service_name: &String,
+                          grants: Vec<Grant>)
                           -> Result<(), SecretsError> {
-        // make sure the service exists
-        let service = try!(self.get_service(&service_name));
+        let service = try!(self.get_service(service_name));
         let now = UTC::now().timestamp();
-        let trans = try!(self.db.transaction());
-        try!(trans.execute_batch("
-            CREATE TEMPORARY TABLE new_grants(grantee PRIMARY KEY)
-        "));
-        for &(ref grantee, ref ciphertext, ref signature) in grants {
-            if grantee.disabled.is_some() {
-                return Err(SecretsError::Authentication("can't grant to \
-                                                         disabled user"));
-            }
-            if !sign::verify_detached(&signature,
-                                      ciphertext,
-                                      &grantor.public_sign) {
-                return Err(SecretsError::Crypto(keys::CryptoError::CantDecrypt));
-            }
-            try!(trans.execute("
-                INSERT INTO new_grants(grantee) VALUES(?)
-                ",
-                &[&grantee.username]));
-            try!(trans.execute("
-                INSERT OR REPLACE INTO grants(grantor, grantee,
-                                              service_name, created,
-                                              ciphertext, signature)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ",
-                &[&grantor.username,
-                  &grantee.username,
-                  &service.name,
-                  &now,
-                  *ciphertext,
-                  &signature.as_ref()]));
-            try!(trans.execute("
-                UPDATE services SET modified=?, modified_by=?
-                ",
-                &[&now, &grantor.username]));
-            try!(trans.execute_batch("
-                DELETE FROM grants
-                WHERE grantee NOT IN (SELECT grantee FROM new_grants);
-            "));
+
+        // make sure we have the most up-to-date version
+        let auth_user = try!(self.get_user(&auth_user.username));
+
+        if !grants.iter().any(|g| g.grantee == auth_user.username) {
+            return Err(SecretsError::ServerError("you must grant yourself"
+                .to_string()));
         }
+
+        let trans = try!(self.db.transaction());
+
+        // delete all of the previous grants
+        try!(trans.execute("DELETE FROM grants WHERE service_name=?",
+                           &[service_name]));
+        // add the new ones
+        for grant in grants {
+            try!(Self::_create_grant(&trans, now, &auth_user,
+                                     &service, grant));
+        }
+        try!(Self::_touch_service(&trans, now, &auth_user, &service));
         try!(trans.commit());
+
         return Ok(());
     }
 

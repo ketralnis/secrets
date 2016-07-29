@@ -517,13 +517,13 @@ impl SecretsClient {
                                                   new_grantee_names,
                                                   api_response.users));
 
-        let service_rotator = ServiceCreateRequest {
-            service: service,
+        let service_rotator = GrantRequest {
+            service_name: service_name,
             grants: new_grants,
         };
 
         let mut rotate_req = SecretsRequest::new(Method::Post,
-                                                 "/api/rotate-service");
+                                                 "/api/rotate");
         try!(rotate_req.set_json(service_rotator));
         try!(self.server_request(rotate_req));
 
