@@ -86,8 +86,8 @@ impl ServerHandler {
             }
 
             if let Some(grant_names) = query_params.get("grant") {
-                for ref name in grant_names {
-                    let (service_name, grantee_name) = Grant::split_key(name);
+                for ref grant_name in grant_names {
+                    let (service_name, grantee_name) = Grant::split_key(grant_name);
 
                     let grant = try!(instance.get_grant(&service_name,
                                                         &grantee_name));
@@ -104,6 +104,31 @@ impl ServerHandler {
                         .entry(service_name)
                         .or_insert_with(|| HashMap::new())
                         .insert(grantee_name, grant);
+                }
+            }
+
+            if let Some(service_names) = query_params.get("grantees") {
+                // they want a list of all Grants to the given Service. This is
+                // usually because they're about to rotate it, so we include the
+                // users as well. We don't include the grantors for those Grants
+                // because it's unlikely they are about to try to decrypt a
+                // bunch of other peoples' ciphertexts but they can follow up
+                // with another request if they want that
+                for service_name in service_names {
+                    let service = try!(instance.get_service(service_name));
+                    api.services.insert(service.name.clone(), service);
+
+                    let grants = try!(instance.get_grants_for_service(service_name));
+                    for grant in grants {
+                        let grantee = try!(instance.get_user(&grant.grantee));
+
+                        api.grants
+                            .entry(service_name.clone())
+                            .or_insert_with(|| HashMap::new())
+                            .insert(grantee.username.clone(), grant);
+
+                        api.users.insert(grantee.username.clone(), grantee);
+                    }
                 }
             }
 

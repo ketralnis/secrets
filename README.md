@@ -35,9 +35,13 @@ Secrets is a system for safely storing shared passwords between users
   - user level
   - crypto level
 * validation of usernames, service names, etc
+* prompts need labelling or we'll just ask them "password:" twice with no
+  context
 
 # Bugs
 
 * Fix prompt to work like
 [python's](https://svn.python.org/projects/python/tags/r32/Lib/getpass.py) or
 ssh's (maybe try [termion](https://github.com/ticki/termion/blob/master/src/input.rs))
+* implement --yes to autoconfirm all prompts (mostly for regression testing)
+* move prompts

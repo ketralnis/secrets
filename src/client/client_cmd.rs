@@ -5,7 +5,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::process::exit;
 
-use clap::{Arg, App, AppSettings, SubCommand};
+use clap::{Arg, ArgGroup, App, AppSettings, SubCommand};
 use env_logger;
 use openssl::ssl::init as init_openssl;
 use sodiumoxide;
@@ -25,7 +25,7 @@ pub const PASSWORD_SOURCE_HELP: &'static str = "\
     prompt (you will be prompted)";
 
 pub fn main() {
-    let mut clapapp = App::new("secrets-client")
+    let clapapp = App::new("secrets-client")
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .arg(Arg::with_name("db")
             .short("d")
@@ -80,6 +80,29 @@ pub fn main() {
                 .index(2)
                 .takes_value(true)
                 .required(true)))
+        .subcommand(SubCommand::with_name("rotate")
+            .about("change the secret for a service")
+            .arg(Arg::with_name("service_name")
+                .index(1)
+                .takes_value(true)
+                .required(true))
+            .arg(Arg::with_name("source")
+                .long("source")
+                .help(PASSWORD_SOURCE_HELP)
+                .takes_value(true)
+                .default_value("prompt")
+                .validator(password::validate_password_source))
+            .arg(Arg::with_name("withhold")
+                .long("withhold")
+                .takes_value(true))
+            .arg(Arg::with_name("only")
+                .long("only")
+                .takes_value(true))
+            .arg(Arg::with_name("copy")
+                .long("copy")
+                .takes_value(false))
+            .group(ArgGroup::with_name("rotation strategy")
+                .args(&["withhold", "only", "copy"])))
         .subcommand(SubCommand::with_name("create")
             .about("create a new service")
             .arg(Arg::with_name("service_name")
@@ -87,23 +110,21 @@ pub fn main() {
                 .takes_value(true)
                 .required(true))
             .arg(Arg::with_name("source")
-                .index(2)
+                .long("source")
                 .takes_value(true)
                 .required(false)
                 .default_value("prompt")
                 .validator(password::validate_password_source))
             .arg(Arg::with_name("grants")
                 .long("grants")
-                .takes_value(true)));
-
-    if cfg!(not(ndebug)) {
-        clapapp = clapapp.subcommand(SubCommand::with_name("echo-password")
+                .takes_value(true))
+        .subcommand(SubCommand::with_name("echo-password")
             .arg(Arg::with_name("source")
                 .index(1)
                 .takes_value(true)
                 .required(true)
-                .validator(password::validate_password_source)));
-    }
+                .hidden(true)
+                .validator(password::validate_password_source))));
 
     let matches = clapapp.get_matches();
 
@@ -248,7 +269,32 @@ pub fn main() {
             let grantees: Vec<String> = grantees.split(",").map(|s|s.to_owned()).collect();
 
             instance.add_grants(service_name, grantees).unwrap();
-        }
+        },
+        ("rotate", Some(subargs)) => {
+            let service_name: String = subargs.value_of("service_name").unwrap().to_string();
+
+            let rotation_stategy =
+                if !subargs.is_present("rotation strategy") || subargs.is_present("copy") {
+                    client::RotationStrategy::Copy
+                } else if let Some(who) = subargs.value_of("withhold") {
+                    let who = who.split(",").map(|s| s.to_owned()).collect();
+                    client::RotationStrategy::Withhold(who)
+                } else if let Some(who) = subargs.value_of("only") {
+                    let who = who.split(",").map(|s| s.to_owned()).collect();
+                    client::RotationStrategy::Only(who)
+                } else {
+                    unreachable!()
+                };
+
+            let secret_source = subargs.value_of("source").unwrap();
+            let secret_source = password::parse_password_source(secret_source)
+                .unwrap();
+            let secret_value =
+                password::evaluate_password_source(secret_source).unwrap();
+            let secret_value = secret_value.as_bytes().to_owned();
+
+            instance.rotate_service(service_name, rotation_stategy, secret_value).unwrap();
+        },
 
         _ => unreachable!(),
     }

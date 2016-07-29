@@ -14,6 +14,7 @@ use tempfile;
 
 pub enum PasswordSource {
     Password(String),
+    Stdin,
     Env(String),
     File(String),
     Fd(i32),
@@ -47,6 +48,8 @@ pub fn parse_password_source(source: &str) -> Result<PasswordSource, String> {
 
     if source.starts_with("pass:") {
         Ok(PasswordSource::Password(rest()))
+    } else if source == "stdin" {
+        Ok(PasswordSource::Stdin)
     } else if source.starts_with("env:") {
         Ok(PasswordSource::Env(rest()))
     } else if source.starts_with("file:") {
@@ -76,6 +79,12 @@ pub fn evaluate_password_source(source: PasswordSource)
         }
         PasswordSource::File(fname) => {
             let mut f = try!(File::open(fname));
+            let mut s = String::new();
+            try!(f.read_to_string(&mut s));
+            Ok(s)
+        }
+        PasswordSource::Stdin => {
+            let mut f = io::stdin();
             let mut s = String::new();
             try!(f.read_to_string(&mut s));
             Ok(s)

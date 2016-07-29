@@ -88,8 +88,7 @@ impl SecretsClient {
                                         try!(server_info.printable_report()))
             .as_bytes()));
 
-        let confirmed = try!(utils::prompt_yn("does that look right? [y/n] "));
-        if !confirmed {
+        if !try!(utils::prompt_yn("does that look right? [y/n] ")) {
             return Err(SecretsError::Authentication("refused server \
                                                      credentials"));
         }
@@ -443,6 +442,93 @@ impl SecretsClient {
 
         return Ok(());
     }
+
+    pub fn rotate_service(&self,
+                          service_name: String,
+                          rotation_strategy: RotationStrategy,
+                          plaintext: Vec<u8>)
+                          -> Result<(), SecretsError> {
+        let now = UTC::now().timestamp();
+        let username = try!(self.username());
+
+        let mut req = SecretsRequest::new(Method::Get, "/api/info");
+        req.add_arg("service", service_name.clone());
+        req.add_arg("grantees", service_name.clone());
+        if let RotationStrategy::Only(ref grantees) = rotation_strategy {
+            // if we know who we're giving the new secret to, fetch those
+            // people. For Copy or Withhold strategies, `grantees` will always
+            // cover the new targets so we don't need to name them explicitly
+            for grantee in grantees {
+                req.add_arg("user", grantee.clone());
+            }
+        }
+        let mut api_response = try!(self.server_request(req));
+
+        let service = try!(api_response.services.remove(&service_name)
+            .ok_or(SecretsError::ClientError("service not found".to_string())));
+        let service_block = try!(api_response.grants.remove(&service_name)
+            .ok_or(SecretsError::ClientError("grants not found".to_string())));
+
+        let current_grants = service_block;
+
+        let mut new_grantee_names: Vec<String> = match rotation_strategy {
+            RotationStrategy::Copy => {
+                current_grants.keys().map(|s| s.to_owned()).collect()
+            },
+            RotationStrategy::Only(whom) => {
+                whom
+            },
+            RotationStrategy::Withhold(whom) => {
+                current_grants.keys()
+                    .filter(|w| !whom.contains(w))
+                    .map(|w| w.to_owned())
+                    .collect()
+            }
+        };
+        if !new_grantee_names.contains(&username) {
+            // the server will insist on this too
+            new_grantee_names.push(username.clone());
+        }
+
+        let missing_users: Vec<String> = new_grantee_names.iter()
+            .filter(|w| !api_response.users.contains_key(*w))
+            .map(|w| w.to_owned())
+            .collect();
+        if missing_users.len() > 0 {
+            return Err(SecretsError::UserDoesntExist(missing_users.join(",")));
+        }
+
+        let current_grantee_names: Vec<String> = current_grants.keys()
+            .map(|w| w.to_owned())
+            .collect();
+        println!("Previous grantees for {}:\n\t{}",
+                 service_name,
+                 current_grantee_names.join(","));
+        println!("New grantees:\n\t{}", new_grantee_names.join(","));
+
+        if !try!(utils::prompt_yn("does that look right? [y/n] ")) {
+            return Err(SecretsError::Authentication("refused server \
+                                                     credentials"));
+        }
+
+        let new_grants = try!(self._create_grants(plaintext,
+                                                  &service_name,
+                                                  now,
+                                                  new_grantee_names,
+                                                  api_response.users));
+
+        let service_rotator = ServiceCreateRequest {
+            service: service,
+            grants: new_grants,
+        };
+
+        let mut rotate_req = SecretsRequest::new(Method::Post,
+                                                 "/api/rotate-service");
+        try!(rotate_req.set_json(service_rotator));
+        try!(self.server_request(rotate_req));
+
+        return Ok(());
+    }
 }
 
 fn http_path(host_str: &str, postfix: &str) -> String {
@@ -466,6 +552,13 @@ struct SecretsRequest {
     json: Option<Vec<u8>>,
 }
 
+// when we are rotating a password, to whom do we give it?
+pub enum RotationStrategy {
+    Copy, // everyone that has it now
+    Only(Vec<String>), // only these people plus the grantor)
+    Withhold(Vec<String>), // everyone except these people
+}
+
 impl SecretsRequest {
     fn new(method: Method, path: &'static str) -> Self {
         SecretsRequest {
@@ -482,6 +575,7 @@ impl SecretsRequest {
     }
 
     fn set_json<T: Serialize>(&mut self, value: T) -> Result<(), SecretsError> {
+        debug_assert!(self.json.is_none());
         let serialized = try!(json_to_vec(&value));
         self.json = Some(serialized);
         return Ok(());

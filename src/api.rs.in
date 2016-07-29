@@ -118,7 +118,7 @@ impl Grant {
         return Ok(grant);
     }
 
-    pub fn from_row(row: rusqlite::Row) -> Result<Self, SecretsError> {
+    pub fn from_row(row: &rusqlite::Row) -> Result<Self, SecretsError> {
         let sig: Vec<u8> = row.get("signature");
         let signature = try!(sign::Signature::from_slice(&sig)
             .ok_or(CryptoError::CantDecrypt));

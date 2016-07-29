@@ -63,7 +63,7 @@ done
 CLIENT1="./target/debug/secrets-client -d ./tmp/client-dking.db -p pass:password_dking"
 CLIENT2="./target/debug/secrets-client -d ./tmp/client-florence.db -p pass:password_florence"
 
-$CLIENT1 create twitter pass:twitterpass --grants=dking
+$CLIENT1 create twitter --source=pass:twitterpass --grants=dking
 $CLIENT1 info twitter
 $CLIENT1 info twitter | grep dking
 $CLIENT1 get twitter
@@ -71,6 +71,16 @@ $CLIENT1 get twitter | grep twitterpass
 
 $CLIENT1 grant twitter florence
 $CLIENT1 grant twitter florence,dking # dking is implied
+
+yes y | $CLIENT1 rotate twitter --source=pass:newtwitterpass1 --withhold florence
+$CLIENT1 get twitter
+! $CLIENT2 get twitter
+yes y | $CLIENT2 rotate twitter --source=pass:newtwitterpass2 --only florence
+! $CLIENT1 get twitter
+$CLIENT2 get twitter
+yes y | $CLIENT1 rotate twitter --source=pass:newtwitterpass3 --only dking
+$CLIENT1 get twitter
+! $CLIENT2 get twitter
 
 # tell me what services are in bus trouble
 $CLIENT1 bus-factor
@@ -99,10 +109,6 @@ $CLIENT2 get twitter | grep twitterpass
 
 ! $SERVER fire florence
 $SERVER fire florence | grep -E "twitter"
-
-$CLIENT1 rotate twitter pass:newtwitterpass1 --withhold florence
-$CLIENT1 rotate twitter pass:newtwitterpass2 --only dking
-$CLIENT1 rotate twitter edit:$(which cat) --only dking
 
 echo hello | $CLIENT1 encrypt florence > tmp/encrypted.bydavid
 $CLIENT2 decrypt < tmp/encrypted.bydavid | grep hello

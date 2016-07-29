@@ -289,6 +289,30 @@ impl SecretsServer {
         return Ok(());
     }
 
+    pub fn get_grants_for_service(&self, service_name: &String)
+                                  -> Result<Vec<Grant>, SecretsError> {
+        let mut ret = vec![];
+        let _: Service = try!(self.get_service(service_name));
+        let mut stmt = try!(self.db.prepare("
+            SELECT service_name, grantee, grantor, ciphertext, signature,
+                   created
+            FROM grants
+            WHERE service_name = ?
+            "));
+        let grants = try!(stmt.query_and_then(&[service_name],
+                                              |r| Grant::from_row(r)));
+        for maybe_grant in grants {
+            let grant = try!(maybe_grant);
+            // verify the signature so we don't return invalid grants
+            let grantor = try!(self.get_user(&grant.grantor));
+            try!(grant.verify_signature(&grantor.public_sign));
+
+            ret.push(grant);
+        }
+
+        return Ok(ret);
+    }
+
     pub fn add_grants(&mut self,
                       auth_user: &User,
                       service_name: &String,
@@ -376,7 +400,7 @@ impl SecretsServer {
             WHERE service_name = ? AND grantee = ?
             ",
             &[service_name, grantee_name],
-            Grant::from_row));
+            |r| Grant::from_row(&r)));
 
         // verify the signature so we don't return invalid grants
         let grantor = try!(self.get_user(&grant.grantor));
