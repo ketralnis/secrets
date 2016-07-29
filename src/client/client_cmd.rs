@@ -117,14 +117,14 @@ pub fn main() {
                 .validator(password::validate_password_source))
             .arg(Arg::with_name("grants")
                 .long("grants")
-                .takes_value(true))
+                .takes_value(true)))
         .subcommand(SubCommand::with_name("echo-password")
             .arg(Arg::with_name("source")
                 .index(1)
                 .takes_value(true)
                 .required(true)
                 .hidden(true)
-                .validator(password::validate_password_source))));
+                .validator(password::validate_password_source)));
 
     let matches = clapapp.get_matches();
 
