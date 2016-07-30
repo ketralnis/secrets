@@ -38,7 +38,7 @@ curl --insecure https://$(hostname):4430/api/server; echo ''
 for new_user in dking florence; do
     echo creating user $new_user
 
-    CLIENT="./target/debug/secrets-client -d ./tmp/client-${new_user}.db -p pass:password_${new_user}"
+    CLIENT="./target/debug/secrets -d ./tmp/client-${new_user}.db -p pass:password_${new_user}"
 
     yes | $CLIENT join -u $new_user -h $(hostname):4430 > tmp/$new_user.request
     cat tmp/$new_user.request
@@ -60,60 +60,60 @@ for new_user in dking florence; do
     echo client successful
 done
 
-CLIENT1="./target/debug/secrets-client -d ./tmp/client-dking.db -p pass:password_dking"
-CLIENT2="./target/debug/secrets-client -d ./tmp/client-florence.db -p pass:password_florence"
+CLIENT_DAVID="./target/debug/secrets -d ./tmp/client-dking.db -p pass:password_dking"
+CLIENT_FLORENCE="./target/debug/secrets -d ./tmp/client-florence.db -p pass:password_florence"
 
-$CLIENT1 create twitter --source=pass:twitterpass --grants=dking
-$CLIENT1 info twitter
-$CLIENT1 info twitter | grep dking
-$CLIENT1 get twitter
-$CLIENT1 get twitter | grep twitterpass
+$CLIENT_DAVID create twitter --source=pass:twitterpass --grants=dking
+$CLIENT_DAVID info twitter
+$CLIENT_DAVID info twitter | grep dking
+$CLIENT_DAVID get twitter
+$CLIENT_DAVID get twitter | grep twitterpass
 
-$CLIENT1 grant twitter florence
-$CLIENT1 grant twitter florence,dking # dking is implied
+$CLIENT_DAVID grant twitter florence
+$CLIENT_DAVID grant twitter florence,dking # dking is implied
 
-yes y | $CLIENT1 rotate twitter --source=pass:newtwitterpass1 --withhold florence
-$CLIENT1 get twitter
-! $CLIENT2 get twitter
-yes y | $CLIENT2 rotate twitter --source=pass:newtwitterpass2 --only florence
-! $CLIENT1 get twitter
-$CLIENT2 get twitter
-yes y | $CLIENT1 rotate twitter --source=pass:newtwitterpass3 --only dking
-$CLIENT1 get twitter
-! $CLIENT2 get twitter
+yes y | $CLIENT_DAVID rotate twitter --source=pass:newtwitterpass1 --withhold florence
+$CLIENT_DAVID get twitter
+! $CLIENT_FLORENCE get twitter
+yes y | $CLIENT_FLORENCE rotate twitter --source=pass:newtwitterpass2 --only florence
+! $CLIENT_DAVID get twitter
+$CLIENT_FLORENCE get twitter
+yes y | $CLIENT_DAVID rotate twitter --source=pass:newtwitterpass3 --only dking
+$CLIENT_DAVID get twitter
+! $CLIENT_FLORENCE get twitter
 
-$CLIENT1 list --mine | grep twitter
-! $CLIENT2 list --mine | grep twitter
+$CLIENT_DAVID list --mine | grep twitter
+! $CLIENT_FLORENCE list --mine | grep twitter
 
-$CLIENT1 list --all | grep twitter
-$CLIENT2 list --all | grep twitter
+$CLIENT_DAVID list --all | grep twitter
+$CLIENT_FLORENCE list --all | grep twitter
 
-$CLIENT2 list --grantee=dking | grep twitter
+$CLIENT_FLORENCE list --grantee=dking | grep twitter
 
-$CLIENT1 grants twitter | grep florence
-$CLIENT1 grants twitter | grep dking
+$CLIENT_DAVID grants twitter | grep florence
+$CLIENT_DAVID grants twitter | grep dking
 
-$CLIENT1 user-info florence | grep twitter
-$CLIENT1 user-info dking | grep twitter
+$CLIENT_DAVID user-info florence | grep twitter
+$CLIENT_DAVID user-info dking | grep twitter
 
-EDITOR=/bin/true $CLIENT1 edit twitter
+EDITOR=/bin/true $CLIENT_DAVID edit twitter
 
-$CLIENT2 get twitter | grep twitterpass
+$CLIENT_FLORENCE get twitter | grep twitterpass
 
 ! $SERVER fire florence
 $SERVER fire florence 2>&1 | grep -E "twitter"
 $SERVER fire florence
 
-! $CLIENT2 get twitter
+! $CLIENT_FLORENCE get twitter
 
 # tell me what services are in bus trouble
-$CLIENT1 bus-factor
-$CLIENT1 bus-factor twitter
+$CLIENT_DAVID bus-factor
+$CLIENT_DAVID bus-factor twitter
 
 # some installs may want there to be a special user that knows all of the
 # secrets for administrative reasons. this prints out all secrets not held by
 # the provided admin user
-$CLIENT1 admin-check dking
+$CLIENT_DAVID admin-check dking
 
-echo hello | $CLIENT1 encrypt florence > tmp/encrypted.bydavid
-$CLIENT2 decrypt < tmp/encrypted.bydavid | grep hello
+echo hello | $CLIENT_DAVID encrypt florence > tmp/encrypted.bydavid
+$CLIENT_FLORENCE decrypt < tmp/encrypted.bydavid | grep hello

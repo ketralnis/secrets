@@ -119,6 +119,7 @@ pub fn main() {
                 .long("grants")
                 .takes_value(true)))
         .subcommand(SubCommand::with_name("echo-password")
+            // a command for testing the password source system
             .arg(Arg::with_name("source")
                 .index(1)
                 .takes_value(true)
@@ -132,7 +133,6 @@ pub fn main() {
     env_logger::init().unwrap();
     sodiumoxide::init();
 
-    // a command for testing the password source system
     if let ("echo-password", Some(subargs)) = matches.subcommand() {
         let pwsd = subargs.value_of("source").unwrap().to_string();
         let pws = password::parse_password_source(&pwsd).unwrap();
