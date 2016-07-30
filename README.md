@@ -44,4 +44,5 @@ Secrets is a system for safely storing shared passwords between users
 [python's](https://svn.python.org/projects/python/tags/r32/Lib/getpass.py) or
 ssh's (maybe try [termion](https://github.com/ticki/termion/blob/master/src/input.rs))
 * implement --yes to autoconfirm all prompts (mostly for regression testing)
-* move prompts
+* make prompts open the terminal directly so we don't interfere with stdin
+* move all interactivity out of client/server into to *_cmd.rs

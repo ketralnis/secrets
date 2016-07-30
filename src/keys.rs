@@ -35,6 +35,7 @@ pub fn derive_key_from_password(password: &[u8],
     Ok(key)
 }
 
+#[allow(dead_code)]
 pub fn derive_auth_from_password(password: &[u8],
                                  salt: pwhash::Salt)
                                  -> Result<auth::Key, CryptoError> {
@@ -117,6 +118,7 @@ pub fn decrypt_blob_with_password(blob: &[u8],
     return Ok(plaintext);
 }
 
+#[allow(dead_code)]
 pub fn auth_items_with_password(items: &Authable,
                                 password: &[u8])
                                 -> Result<Vec<u8>, CryptoError> {
@@ -137,6 +139,7 @@ pub fn auth_items_with_password(items: &Authable,
     return Ok(ret);
 }
 
+#[allow(dead_code)]
 pub fn check_auth_items_with_password(items: &Authable,
                                       expected_tag: &[u8],
                                       password: &[u8])

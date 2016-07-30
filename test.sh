@@ -82,20 +82,13 @@ yes y | $CLIENT1 rotate twitter --source=pass:newtwitterpass3 --only dking
 $CLIENT1 get twitter
 ! $CLIENT2 get twitter
 
-# tell me what services are in bus trouble
-$CLIENT1 bus-factor
-$CLIENT1 bus-factor twitter
-
-# some installs may want there to be a special user that knows all of the
-# secrets for administrative reasons. this prints out all secrets not held by
-# the provided admin user
-$CLIENT1 admin-check dking
-
 $CLIENT1 list --mine | grep twitter
 ! $CLIENT2 list --mine | grep twitter
 
 $CLIENT1 list --all | grep twitter
 $CLIENT2 list --all | grep twitter
+
+$CLIENT2 list --grantee=dking | grep twitter
 
 $CLIENT1 grants twitter | grep florence
 $CLIENT1 grants twitter | grep dking
@@ -108,11 +101,19 @@ EDITOR=/bin/true $CLIENT1 edit twitter
 $CLIENT2 get twitter | grep twitterpass
 
 ! $SERVER fire florence
-$SERVER fire florence | grep -E "twitter"
-
-echo hello | $CLIENT1 encrypt florence > tmp/encrypted.bydavid
-$CLIENT2 decrypt < tmp/encrypted.bydavid | grep hello
-
+$SERVER fire florence 2>&1 | grep -E "twitter"
 $SERVER fire florence
 
 ! $CLIENT2 get twitter
+
+# tell me what services are in bus trouble
+$CLIENT1 bus-factor
+$CLIENT1 bus-factor twitter
+
+# some installs may want there to be a special user that knows all of the
+# secrets for administrative reasons. this prints out all secrets not held by
+# the provided admin user
+$CLIENT1 admin-check dking
+
+echo hello | $CLIENT1 encrypt florence > tmp/encrypted.bydavid
+$CLIENT2 decrypt < tmp/encrypted.bydavid | grep hello

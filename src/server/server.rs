@@ -9,7 +9,6 @@ use api::{User, Service, Grant, JoinRequest, PeerInfo};
 use common;
 use common::SecretsContainer;
 use common::SecretsError;
-use keys;
 use utils;
 
 const SYNC_SLOP: i64 = 60; // in seconds

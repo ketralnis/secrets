@@ -182,10 +182,6 @@ impl Grant {
         return Ok(decrypted);
     }
 
-    pub fn key(&self) -> String {
-        return Self::key_for(&self.service_name, &self.grantee);
-    }
-
     pub fn key_for(service_name: &str, grantee: &str) -> String {
         return format!("{}::{}", service_name, grantee);
     }

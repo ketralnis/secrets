@@ -464,7 +464,8 @@ impl SecretsClient {
         }
         let mut api_response = try!(self.server_request(req));
 
-        let service = try!(api_response.services.remove(&service_name)
+        // make sure the service exists
+        let _: Service = try!(api_response.services.remove(&service_name)
             .ok_or(SecretsError::ClientError("service not found".to_string())));
         let service_block = try!(api_response.grants.remove(&service_name)
             .ok_or(SecretsError::ClientError("grants not found".to_string())));
@@ -627,7 +628,7 @@ impl SecretsContainer for SecretsClient {
     }
 }
 
-fn create_client_schema(conn: &mut rusqlite::Connection)
+fn create_client_schema(_conn: &mut rusqlite::Connection)
                         -> Result<(), rusqlite::Error> {
     Ok(())
 }
