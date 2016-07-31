@@ -8,6 +8,7 @@ mkdir tmp
 export RUST_BACKTRACE=1
 
 cargo test # also builds it
+cargo build
 
 export RUST_LOG="secrets=debug"
 
@@ -35,7 +36,7 @@ echo checking http health
 curl --insecure https://$(hostname):4430/api/health; echo ''
 curl --insecure https://$(hostname):4430/api/server; echo ''
 
-for new_user in dking florence; do
+for new_user in david florence; do
     echo creating user $new_user
 
     CLIENT="./target/debug/secrets -d ./tmp/client-${new_user}.db -p pass:password_${new_user}"
@@ -56,29 +57,35 @@ for new_user in dking florence; do
     # should work now
     echo "checking that we're accepted (this should succeed)"
     $CLIENT check-server
+    $CLIENT user $new_user
 
     echo client successful
 done
 
-CLIENT_DAVID="./target/debug/secrets -d ./tmp/client-dking.db -p pass:password_dking"
+CLIENT_DAVID="./target/debug/secrets -d ./tmp/client-david.db -p pass:password_david"
 CLIENT_FLORENCE="./target/debug/secrets -d ./tmp/client-florence.db -p pass:password_florence"
 
-$CLIENT_DAVID create twitter --source=pass:twitterpass --grants=dking
+$CLIENT_DAVID create twitter --source=pass:twitterpass --grant=david
+$CLIENT_DAVID create twitter2 --source=pass:twitterpass --grant=david,florence
+
 $CLIENT_DAVID info twitter
-$CLIENT_DAVID info twitter | grep dking
+$CLIENT_DAVID info twitter | grep david
+$CLIENT_DAVID info twitter,twitter2 | grep david
+
 $CLIENT_DAVID get twitter
+$CLIENT_DAVID get twitter | grep twitterpass
 $CLIENT_DAVID get twitter | grep twitterpass
 
 $CLIENT_DAVID grant twitter florence
-$CLIENT_DAVID grant twitter florence,dking # dking is implied
+$CLIENT_DAVID grant twitter florence,david # david is implied
 
 yes | $CLIENT_DAVID rotate twitter --source=pass:newtwitterpass1 --withhold florence
 $CLIENT_DAVID get twitter
 ! $CLIENT_FLORENCE get twitter
-yes | $CLIENT_FLORENCE rotate twitter --source=pass:newtwitterpass2 --only florence
+yes | $CLIENT_FLORENCE rotate twitter --source=pass:newtwitterpass2 --grant=florence
 ! $CLIENT_DAVID get twitter
 $CLIENT_FLORENCE get twitter
-yes | $CLIENT_DAVID rotate twitter --source=pass:newtwitterpass3 --only dking
+yes | $CLIENT_DAVID rotate twitter --source=pass:newtwitterpass3 --grant=david
 $CLIENT_DAVID get twitter
 ! $CLIENT_FLORENCE get twitter
 
@@ -89,14 +96,16 @@ $CLIENT_DAVID list | grep twitter
 $CLIENT_DAVID list --all | grep twitter
 $CLIENT_FLORENCE list --all | grep twitter
 
-$CLIENT_FLORENCE list --grantee=dking | grep '^twitter'
-$CLIENT_FLORENCE list --grantee=dking,florence | grep twitter::
+$CLIENT_FLORENCE list --grantee=david | grep '^twitter'
+$CLIENT_FLORENCE list --grantee=david,florence | grep twitter::
 
-$CLIENT_DAVID grants twitter | grep florence
-$CLIENT_DAVID grants twitter | grep dking
+$CLIENT_DAVID grants twitter2 | grep florence
+$CLIENT_DAVID grants twitter2 | grep david
 
-$CLIENT_DAVID user-info florence | grep twitter
-$CLIENT_DAVID user-info dking | grep twitter
+$CLIENT_DAVID grant-info twitter2::florence
+
+$CLIENT_DAVID user florence
+$CLIENT_DAVID user david
 
 EDITOR=/bin/true $CLIENT_DAVID edit twitter
 
@@ -115,7 +124,7 @@ $CLIENT_DAVID bus-factor twitter
 # some installs may want there to be a special user that knows all of the
 # secrets for administrative reasons. this prints out all secrets not held by
 # the provided admin user
-$CLIENT_DAVID admin-check dking
+$CLIENT_DAVID admin-check david
 
 echo hello | $CLIENT_DAVID encrypt florence > tmp/encrypted.bydavid
 $CLIENT_FLORENCE decrypt < tmp/encrypted.bydavid | grep hello

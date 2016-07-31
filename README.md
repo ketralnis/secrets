@@ -46,3 +46,5 @@ ssh's (maybe try [termion](https://github.com/ticki/termion/blob/master/src/inpu
 * implement --yes to autoconfirm all prompts (mostly for regression testing)
 * make prompts open the terminal directly so we don't interfere with stdin
 * move all interactivity out of client/server into to *_cmd.rs
+* unify the format of the various printable reports
+* errors are a mess

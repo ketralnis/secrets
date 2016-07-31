@@ -24,6 +24,7 @@ use sodiumoxide::crypto::hash::sha256;
 use common::SecretsError;
 use keys::CryptoError;
 use keys;
+use utils::pretty_date;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -56,6 +57,15 @@ impl User {
         };
         Ok(u)
     }
+
+    pub fn to_peer_info(&self) -> PeerInfo {
+        return PeerInfo {
+            cn: self.username.clone(),
+            fingerprint: self.ssl_fingerprint.clone(),
+            public_key: self.public_key.clone(),
+            public_sign: self.public_sign.clone(),
+        };
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +87,22 @@ impl Service {
             modified_by: row.get("modified_by"),
         };
         Ok(s)
+    }
+
+    pub fn printable_report(&self) -> String {
+        return format!("=== {} ===\n\
+                       name:        {}
+                       created:     {}\n\
+                       modified:    {}\n\
+                       creator:     {}\n\
+                       modified by: {}\
+                       ",
+                       self.name,
+                       self.name,
+                       pretty_date(self.created),
+                       pretty_date(self.modified),
+                       self.creator,
+                       self.modified_by)
     }
 }
 
@@ -195,6 +221,32 @@ impl Grant {
             .collect();
         return (splitted[0].to_string(), splitted[1].to_string());
     }
+
+    pub fn printable_report(&self) -> String {
+        return format!("=== {} === \n\
+                       key:          {}\n\
+                       grantee:      {}\n\
+                       grantor:      {}\n\
+                       service name: {}\n\
+                       cipherlength: {}\n\
+                       created:      {}",
+                       self.key(),
+                       self.key(),
+                       self.grantee,
+                       self.grantor,
+                       self.service_name,
+                       self.ciphertext.len(),
+                       pretty_date(self.created));
+    }
+
+    pub fn clap_validate_name(name: String) -> Result<(), String> {
+        if (&name).contains("::") {
+            return Ok(())
+        } else {
+            return Err("must contain ::".to_string())
+        }
+    }
+
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -235,12 +287,13 @@ impl PeerInfo {
         let public_sign_hex = self.public_sign.as_ref().to_hex();
         let pneumonic = try!(self.pneumonic());
 
-        return Ok(format!("\
+        return Ok(format!("=== {} ===\n\
                           common name: {}\n\
                           fingerprint: {}\n\
                           public key:  {}\n\
                           public sign: {}\n\
                           pneumonic:   {}",
+                          self.cn,
                           self.cn,
                           fingerprint_hex,
                           public_key_hex,

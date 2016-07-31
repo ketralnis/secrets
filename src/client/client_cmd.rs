@@ -10,6 +10,7 @@ use env_logger;
 use openssl::ssl::init as init_openssl;
 use sodiumoxide;
 
+use api::Grant;
 use client::client;
 use password;
 use utils;
@@ -24,8 +25,8 @@ pub const PASSWORD_SOURCE_HELP: &'static str = "\
     \tfd:number (read from a file descriptor)\n\
     \tprompt (you will be prompted)";
 
-pub fn main() {
-    let clapapp = App::new("secrets-client")
+fn make_clap<'a, 'b>() -> App<'a, 'b> {
+    return App::new("secrets-client")
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .arg(Arg::with_name("db")
             .short("d")
@@ -66,29 +67,46 @@ pub fn main() {
             .about("show info about the client"))
         .subcommand(SubCommand::with_name("server-info")
             .about("show info about the server"))
+        .subcommand(SubCommand::with_name("user")
+            .about("print out some info about a service")
+            .arg(Arg::with_name("username")
+                .index(1)
+                .takes_value(true)
+                .required(true)
+                .multiple(true)))
         .subcommand(SubCommand::with_name("info")
             .about("print out some info about a service")
             .arg(Arg::with_name("service_name")
                 .index(1)
                 .takes_value(true)
-                .required(true)))
+                .required(true)
+                .multiple(true)))
+        .subcommand(SubCommand::with_name("grant-info")
+            .about("print out some info about a particular grant")
+            .arg(Arg::with_name("grant_name")
+                .index(1)
+                .takes_value(true)
+                .required(true)
+                .multiple(true)
+                .validator(Grant::clap_validate_name)))
         .subcommand(SubCommand::with_name("get")
             .about("get the current secret value for a service")
             .arg(Arg::with_name("service_name")
                 .index(1)
                 .takes_value(true)
-                .required(true)))
+                .required(true)
+                .multiple(true)))
         .subcommand(SubCommand::with_name("grant")
             .about("grant someone access to an existing service")
             .arg(Arg::with_name("service_name")
                 .index(1)
                 .takes_value(true)
                 .required(true))
-            .arg(Arg::with_name("grantees")
-                .long("grantees")
+            .arg(Arg::with_name("grantee")
                 .index(2)
                 .takes_value(true)
-                .required(true)))
+                .required(true)
+                .multiple(true)))
         .subcommand(SubCommand::with_name("rotate")
             .about("change the secret for a service")
             .arg(Arg::with_name("service_name")
@@ -105,15 +123,15 @@ pub fn main() {
                 .long("withhold")
                 .takes_value(true)
                 .multiple(true))
-            .arg(Arg::with_name("only")
-                .long("only")
+            .arg(Arg::with_name("grant")
+                .long("grant")
                 .takes_value(true)
                 .multiple(true))
             .arg(Arg::with_name("copy")
                 .long("copy")
                 .takes_value(false))
             .group(ArgGroup::with_name("rotation strategy")
-                .args(&["withhold", "only", "copy"])))
+                .args(&["withhold", "grant", "copy"])))
         .subcommand(SubCommand::with_name("create")
             .about("create a new service")
             .arg(Arg::with_name("service_name")
@@ -126,8 +144,8 @@ pub fn main() {
                 .required(false)
                 .default_value("prompt")
                 .validator(password::validate_password_source))
-            .arg(Arg::with_name("grants")
-                .long("grants")
+            .arg(Arg::with_name("grant")
+                .long("grant")
                 .takes_value(true)
                 .multiple(true)))
         .subcommand(SubCommand::with_name("list")
@@ -146,8 +164,18 @@ pub fn main() {
                 .takes_value(true))
             .group(ArgGroup::with_name("for whom")
                 .args(&["all", "mine", "grantee"])))
-        ;
+        .subcommand(SubCommand::with_name("grants")
+            .about("list all grantees of a given service")
+            .arg(Arg::with_name("service_name")
+                .index(1)
+                .help("the name of the service")
+                .takes_value(true)
+                .required(true)))
+    ;
+}
 
+pub fn main() {
+    let clapapp = make_clap();
     let matches = clapapp.get_matches();
 
     init_openssl();
@@ -182,12 +210,12 @@ pub fn main() {
 
     // the only command that's valid if the DB doesn't exist is join
     let config_exists = config_file.is_file();
-    let is_create = matches.subcommand_matches("join").is_some();
-    if config_exists && is_create {
+    let is_join = matches.subcommand_matches("join").is_some();
+    if config_exists && is_join {
         io::stderr().write(config_file.as_os_str().as_bytes()).unwrap();
         io::stderr().write(b" already exists\n").unwrap();
         exit(1);
-    } else if !config_exists && !is_create {
+    } else if !config_exists && !is_join {
         io::stderr().write(config_file.as_os_str().as_bytes()).unwrap();
         io::stderr().write(b" not found. did you join?\n").unwrap();
         exit(1);
@@ -207,8 +235,7 @@ pub fn main() {
         let client_report =
             client.get_peer_info().unwrap().printable_report().unwrap();
         io::stderr()
-            .write(format!("=== created client info: ===\n{}\n",
-                           client_report)
+            .write(format!("{}", client_report)
                 .as_bytes())
             .unwrap();
         let jr = client.join_request().unwrap();
@@ -233,11 +260,13 @@ pub fn main() {
     match matches.subcommand() {
         ("create", Some(subargs)) => {
             let service_name = subargs.value_of("service_name").unwrap();
-            let grantees = subargs.value_of("grants")
-                .map(|v| {
-                    v.split(",").map(|v| v.to_owned()).collect::<Vec<String>>()
-                })
-                .unwrap_or(Vec::new());
+            let grantees: Vec<String> = if subargs.is_present("grant") {
+                    subargs.values_of("grant").unwrap()
+                        .map(|w| w.to_owned())
+                        .collect()
+                } else {
+                    Vec::new()
+                };
             let secret_source = subargs.value_of("source").unwrap();
             let secret_source = password::parse_password_source(secret_source)
                 .unwrap();
@@ -246,53 +275,60 @@ pub fn main() {
             let secret_value = secret_value.as_bytes().to_owned();
             instance.create_service(service_name.to_owned(),
                                     secret_value,
-                                    grantees)
-                .unwrap();
-            exit(0);
+                                    grantees).unwrap()
         }
         ("client-info", Some(_)) => {
             let client_info = instance.get_peer_info().unwrap();
-            println!("=== client info: ===\n{}",
-                     client_info.printable_report().unwrap());
+            println!("{}", client_info.printable_report().unwrap());
         }
         ("server-info", Some(_)) => {
             let server_info = instance.get_server_info().unwrap();
-            println!("=== server info: ===\n{}",
-                     server_info.printable_report().unwrap());
-        }
+            println!("{}", server_info.printable_report().unwrap());
+        },
+        ("user", Some(subargs)) => {
+            let usernames: Vec<String> = subargs.values_of("username")
+                .unwrap()
+                .map(|w| w.to_owned())
+                .collect();
+            for username in usernames {
+                let user = instance.get_user(&username).unwrap();
+                let peer_info = user.to_peer_info();
+                println!("{}", peer_info.printable_report().unwrap());
+            }
+        },
+        ("grant-info", Some(subargs)) => {
+            let grant_names: Vec<String> = subargs.values_of("grant_name")
+                .unwrap()
+                .map(|w| w.to_owned())
+                .collect();
+            for grant_name in grant_names {
+                let grant = instance.get_grant(&grant_name).unwrap();
+                println!("{}", grant.printable_report());
+            }
+        },
         ("info", Some(subargs)) => {
             let service_names: Vec<String> = subargs.values_of("service_name")
                 .unwrap()
                 .map(|w| w.to_owned())
                 .collect();
             for service_name in service_names {
-                let service = instance.get_service(service_name).unwrap();
-                println!("\
-                    {}:\n\
-                    \tcreated: {}\n\
-                    \tmodified: {}\n\
-                    \tcreator: {}\n\
-                    \tmodified by: {}\
-                    ",
-                    service.name,
-                    utils::pretty_date(service.created),
-                    utils::pretty_date(service.modified),
-                    service.creator,
-                    service.modified_by,
-                );
+                let service = instance.get_service(&service_name).unwrap();
+                println!("{}", service.printable_report());
             }
-        }
+        },
         ("get", Some(subargs)) => {
-            let service_name: String = subargs.value_of("service_name").unwrap().to_string();
-            let decrypted_grant = instance.get_grant(&service_name).unwrap();
+            let service_names: Vec<String> = subargs.values_of("service_name").unwrap()
+                .map(|s| s.to_owned()).collect();
+            for service_name in service_names {
+                let decrypted_grant = instance.get_decrypted_grant(&service_name).unwrap();
 
-            io::stdout().write(&decrypted_grant.plaintext).unwrap();
-            io::stdout().write(b"\n").unwrap();
+                io::stdout().write(&decrypted_grant.plaintext).unwrap();
+                io::stdout().write(b"\n").unwrap();
+            }
         },
         ("grant", Some(subargs)) => {
             let service_name: String = subargs.value_of("service_name").unwrap().to_string();
-            let grantees: String = subargs.value_of("grantees").unwrap().to_string();
-            let grantees: Vec<String> = grantees.split(",").map(|s|s.to_owned()).collect();
+            let grantees: Vec<String> = subargs.values_of("grantee").unwrap().map(|s|s.to_owned()).collect();
 
             instance.add_grants(service_name, grantees).unwrap();
         },
@@ -305,7 +341,7 @@ pub fn main() {
                 } else if let Some(whos) = subargs.values_of("withhold") {
                     let whos = whos.map(|w| w.to_owned()).collect();
                     client::RotationStrategy::Withhold(whos)
-                } else if let Some(whos) = subargs.values_of("only") {
+                } else if let Some(whos) = subargs.values_of("grant") {
                     let whos = whos.map(|w| w.to_owned()).collect();
                     client::RotationStrategy::Only(whos)
                 } else {
@@ -351,7 +387,34 @@ pub fn main() {
                 unreachable!()
             }
         },
+        ("grants", Some(subargs)) => {
+            let service_names: Vec<String> = subargs.values_of("service_name").unwrap()
+                .map(|s| s.to_owned())
+                .collect();
+            for service_name in &service_names {
+                let grants = instance.grants_for_service(service_name).unwrap();
+                for grant in grants {
+                    if service_names.len() == 1 {
+                        println!("{}", grant.grantee);
+                    } else {
+                        println!("{}", grant.key());
+                    }
+                }
+            }
+        },
 
         _ => unreachable!(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::make_clap;
+
+    #[test]
+    pub fn test_make_clap() {
+        // a lot of clap's validation is done at runtime, so this test just
+        // makes sure it creates okay
+        make_clap();
     }
 }

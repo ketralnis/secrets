@@ -85,8 +85,7 @@ pub fn main() {
             .unwrap();
         // let fingerprint = instance.ssl_fingerprint().unwrap();
         let server_info = instance.get_peer_info().unwrap();
-        println!("=== created server: ===\n{}",
-                 server_info.printable_report().unwrap());
+        println!("{}", server_info.printable_report().unwrap());
         return;
     }
 
@@ -106,9 +105,7 @@ pub fn main() {
         }
         ("server-info", _) => {
             let server_info = instance.get_peer_info().unwrap();
-
-            println!("=== server info: ===\n{}",
-                     server_info.printable_report().unwrap());
+            println!("{}", server_info.printable_report().unwrap());
         }
         ("accept-join", Some(subargs)) => {
             let filename = subargs.value_of("filename").unwrap();

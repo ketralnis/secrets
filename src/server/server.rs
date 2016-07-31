@@ -59,13 +59,11 @@ impl SecretsServer {
             return Err(SecretsError::Authentication("user exists"));
         }
 
-        println!("=== client info: ===\n{}",
-                 try!(jr.client_info.printable_report()));
+        println!("{}", try!(jr.client_info.printable_report()));
 
         let accepted = try!(utils::prompt_yn("does that look right? [y/n] "));
         if !accepted {
-            return Err(SecretsError::Authentication("refused client \
-                                                     authenticator"));
+            return Err(SecretsError::Authentication("refused"));
         }
 
         let user = try!(self.create_user(jr.client_info.cn,
