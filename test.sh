@@ -107,7 +107,8 @@ $CLIENT_DAVID grant-info twitter2::florence
 $CLIENT_DAVID user florence
 $CLIENT_DAVID user david
 
-EDITOR=/bin/true $CLIENT_DAVID edit twitter
+EDITOR=$(which true) $CLIENT_DAVID edit twitter
+$CLIENT_DAVID edit --editor=$(which true) twitter
 
 $CLIENT_FLORENCE get twitter | grep twitterpass
 
@@ -119,6 +120,7 @@ $SERVER fire florence
 
 # tell me what services are in bus trouble
 $CLIENT_DAVID bus-factor
+$CLIENT_DAVID bus-factor --min=2
 $CLIENT_DAVID bus-factor twitter
 
 # some installs may want there to be a special user that knows all of the
@@ -126,5 +128,9 @@ $CLIENT_DAVID bus-factor twitter
 # the provided admin user
 $CLIENT_DAVID admin-check david
 
+# general purpose encryption. useful?
 echo hello | $CLIENT_DAVID encrypt florence > tmp/encrypted.bydavid
 $CLIENT_FLORENCE decrypt < tmp/encrypted.bydavid | grep hello
+
+echo hello | $CLIENT_DAVID sign florence > tmp/signed.bydavid
+$CLIENT_FLORENCE check-signed < tmp/signed.bydavid | grep hello

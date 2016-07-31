@@ -132,6 +132,16 @@ fn make_clap<'a, 'b>() -> App<'a, 'b> {
                 .takes_value(false))
             .group(ArgGroup::with_name("rotation strategy")
                 .args(&["withhold", "grant", "copy"])))
+        .subcommand(SubCommand::with_name("edit")
+            .about("shortcut to edit the secret for a service in a local editor")
+            .arg(Arg::with_name("service_name")
+                .index(1)
+                .takes_value(true)
+                .required(true))
+            .arg(Arg::with_name("editor")
+                .long("editor")
+                .short("e")
+                .takes_value(true)))
         .subcommand(SubCommand::with_name("create")
             .about("create a new service")
             .arg(Arg::with_name("service_name")
@@ -192,8 +202,7 @@ pub fn main() {
 
     // find or infer the location of .secrets-client.db
     if matches.value_of_os("db") == None && env::home_dir() == None {
-        io::stderr().write(b"--db not specified and $HOME not set\n").unwrap();
-        exit(1);
+        panic!("--db not specified and $HOME not set\n");
     }
 
     let config_file = match matches.value_of_os("db") {
@@ -212,13 +221,9 @@ pub fn main() {
     let config_exists = config_file.is_file();
     let is_join = matches.subcommand_matches("join").is_some();
     if config_exists && is_join {
-        io::stderr().write(config_file.as_os_str().as_bytes()).unwrap();
-        io::stderr().write(b" already exists\n").unwrap();
-        exit(1);
+        panic!("{} already exists", config_file.to_str().unwrap());
     } else if !config_exists && !is_join {
-        io::stderr().write(config_file.as_os_str().as_bytes()).unwrap();
-        io::stderr().write(b" not found. did you join?\n").unwrap();
-        exit(1);
+        panic!("{} not found. did you join?", config_file.to_str().unwrap());
     }
 
     // every command needs a valid password to proceed
@@ -355,7 +360,9 @@ pub fn main() {
                 password::evaluate_password_source(secret_source).unwrap();
             let secret_value = secret_value.as_bytes().to_owned();
 
-            instance.rotate_service(service_name, rotation_stategy, secret_value).unwrap();
+            instance.rotate_service(&service_name,
+                                    rotation_stategy,
+                                    secret_value).unwrap();
         },
         ("list", Some(subargs)) => {
             if !subargs.is_present("for whom") || subargs.is_present("all") {
@@ -402,6 +409,20 @@ pub fn main() {
                 }
             }
         },
+        ("edit", Some(subargs)) => {
+            let service_name = subargs.value_of("service_name").unwrap().to_string();
+            let decrypted_grant = instance.get_decrypted_grant(&service_name).unwrap();
+            let editor = subargs.value_of("editor").map(|s| s.to_owned());
+            let plaintext = decrypted_grant.plaintext;
+            let new_value = password::edit(editor,
+                                           plaintext.clone())
+                .unwrap();
+            if !utils::constant_time_compare(&plaintext, &new_value) {
+                instance.rotate_service(&service_name,
+                                        client::RotationStrategy::Copy,
+                                        new_value).unwrap();
+            }
+        }
 
         _ => unreachable!(),
     }

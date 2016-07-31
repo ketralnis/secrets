@@ -27,7 +27,7 @@ Secrets is a system for safely storing shared passwords between users
   - every time we see a user, cache the key we saw and error if it has changed
 * it's currently impossible to change a store password. probably need an intermediate password store instead of individually encrypting things with it
 * user exists/service exists/grant exists messages should be better than sql errors
-* any security sensitive values including public keys should be signed, so attackers can't just insert their public keys right into the DB
+* any security sensitive values including public keys should be signed, so attackers can't just insert their own public keys right into the DB
 * File format security. See: https://www.cs.ox.ac.uk/files/6487/pwvault.pdf
   - auth codes so people can't just modify our database (both on client and server)
   - merkle tree logs built out of those auth codes
@@ -48,3 +48,5 @@ ssh's (maybe try [termion](https://github.com/ticki/termion/blob/master/src/inpu
 * move all interactivity out of client/server into to *_cmd.rs
 * unify the format of the various printable reports
 * errors are a mess
+* wrapper type for passwords that can store derived keys as well as use Vec<u8> instead of String. Use these for secrets too. all of that encoding stuff is a mess
+* `edit` and `rotate` are not atomic. two people editing will clobber each other

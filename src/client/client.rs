@@ -224,11 +224,10 @@ impl SecretsClient {
         });
 
         if response.status != StatusCode::Ok {
-            return Err(SecretsError::ClientError(format!("got an error \
-                                                          from the server \
-                                                          ({}): {}",
-                                                         req.path,
-                                                         response.status)));
+            return Err(SecretsError::ClientError(
+                format!("got an error from the server ({}): {}",
+                        req.path,
+                        response.status)));
         }
         let api_response: ApiResponse = try!(dejson_from_reader(response));
         if let Some(err) = api_response.error {
@@ -479,7 +478,7 @@ impl SecretsClient {
     }
 
     pub fn rotate_service(&self,
-                          service_name: String,
+                          service_name: &String,
                           rotation_strategy: RotationStrategy,
                           plaintext: Vec<u8>)
                           -> Result<(), SecretsError> {
@@ -500,9 +499,9 @@ impl SecretsClient {
         let mut api_response = try!(self.server_request(req));
 
         // make sure the service exists
-        let _: Service = try!(api_response.services.remove(&service_name)
+        let _: Service = try!(api_response.services.remove(service_name)
             .ok_or(SecretsError::ClientError("service not found".to_string())));
-        let service_block = try!(api_response.grants.remove(&service_name)
+        let service_block = try!(api_response.grants.remove(service_name)
             .ok_or(SecretsError::ClientError("grants not found".to_string())));
 
         let current_grants = service_block;
@@ -511,10 +510,10 @@ impl SecretsClient {
             RotationStrategy::Copy => {
                 current_grants.keys().map(|s| s.to_owned()).collect()
             },
-            RotationStrategy::Only(whom) => {
-                whom
+            RotationStrategy::Only(ref whom) => {
+                whom.clone()
             },
-            RotationStrategy::Withhold(whom) => {
+            RotationStrategy::Withhold(ref whom) => {
                 current_grants.keys()
                     .filter(|w| !whom.contains(w))
                     .map(|w| w.to_owned())
@@ -542,8 +541,10 @@ impl SecretsClient {
                  current_grantee_names.join(","));
         println!("New grantees:\n\t{}", new_grantee_names.join(","));
 
-        if !try!(utils::prompt_yn("does that look right? [y/n] ")) {
-            return Err(SecretsError::Authentication("refused"));
+        if rotation_strategy != RotationStrategy::Copy {
+            if !try!(utils::prompt_yn("does that look right? [y/n] ")) {
+                return Err(SecretsError::Authentication("refused"));
+            }
         }
 
         let new_grants = try!(self._create_grants(plaintext,
@@ -553,7 +554,7 @@ impl SecretsClient {
                                                   api_response.users));
 
         let service_rotator = GrantRequest {
-            service_name: service_name,
+            service_name: service_name.clone(),
             grants: new_grants,
         };
 
@@ -630,7 +631,7 @@ struct SecretsRequest {
 }
 
 // when we are rotating a password, to whom do we give it?
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum RotationStrategy {
     Copy, // everyone that has it now
     Only(Vec<String>), // only these people plus the grantor)
