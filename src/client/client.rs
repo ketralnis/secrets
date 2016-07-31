@@ -453,7 +453,7 @@ impl SecretsClient {
 
         let mut req = SecretsRequest::new(Method::Get, "/api/info");
         req.add_arg("service", service_name.clone());
-        req.add_arg("grantees", service_name.clone());
+        req.add_arg("grants-for-service", service_name.clone());
         if let RotationStrategy::Only(ref grantees) = rotation_strategy {
             // if we know who we're giving the new secret to, fetch those
             // people. For Copy or Withhold strategies, `grantees` will always
@@ -529,6 +529,31 @@ impl SecretsClient {
         try!(self.server_request(rotate_req));
 
         return Ok(());
+    }
+
+    pub fn all_services(&self) -> Result<Vec<Service>, SecretsError> {
+        let mut req = SecretsRequest::new(Method::Get, "/api/info");
+        req.add_arg("all-services", "true".to_string());
+        let mut api_response = try!(self.server_request(req));
+        let services = api_response.services.drain().map(|(_k,v)| v).collect();
+        return Ok(services);
+    }
+
+    pub fn grants_for_grantee(&self, grantee_name: &String)
+                              -> Result<Vec<Grant>, SecretsError> {
+        let mut req = SecretsRequest::new(Method::Get, "/api/info");
+        req.add_arg("grants-for-grantee", grantee_name.clone());
+        let mut api_response = try!(self.server_request(req));
+
+        let mut ret = vec![];
+
+        for (_service_name, mut service_block) in api_response.grants.drain() {
+            for (_username, grant) in service_block.drain() {
+                ret.push(grant);
+            }
+        }
+
+        return Ok(ret);
     }
 }
 

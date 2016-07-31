@@ -68,7 +68,7 @@ pub struct Service {
 }
 
 impl Service {
-    pub fn from_row(row: rusqlite::Row) -> Result<Self, SecretsError> {
+    pub fn from_row(row: &rusqlite::Row) -> Result<Self, SecretsError> {
         let s = Service {
             name: row.get("service_name"),
             created: row.get("created"),
@@ -180,6 +180,10 @@ impl Grant {
                                                 &grantee_public_key,
                                                 &grantor_private_key));
         return Ok(decrypted);
+    }
+
+    pub fn key(&self) -> String {
+        return Self::key_for(&self.service_name, &self.grantee);
     }
 
     pub fn key_for(service_name: &str, grantee: &str) -> String {

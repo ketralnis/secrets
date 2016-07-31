@@ -17,12 +17,12 @@ use utils;
 // TODO this renders like crap
 // TODO move this
 pub const PASSWORD_SOURCE_HELP: &'static str = "\
-    Where to get the master password. Valid formats:
-    pass:password (a literal password)
-    env:VARIABLE (an environment variable)
-    file:filename (read from a file; beware of newlines!)
-    fd:number (read from a file descriptor)
-    prompt (you will be prompted)";
+    Where to get the master password. Valid formats:\n\
+    \tpass:password (a literal password)\n\
+    \tenv:VARIABLE (an environment variable)\n\
+    \tfile:filename (read from a file; beware of newlines!)\n\
+    \tfd:number (read from a file descriptor)\n\
+    \tprompt (you will be prompted)";
 
 pub fn main() {
     let clapapp = App::new("secrets-client")
@@ -41,6 +41,14 @@ pub fn main() {
             .takes_value(true)
             .default_value("prompt")
             .validator(password::validate_password_source))
+        .subcommand(SubCommand::with_name("echo-password")
+            // a command for testing the password source system
+            .arg(Arg::with_name("source")
+                .index(1)
+                .takes_value(true)
+                .required(true)
+                .hidden(true)
+                .validator(password::validate_password_source)))
         .subcommand(SubCommand::with_name("join")
             .arg(Arg::with_name("username")
                 .short("u")
@@ -77,6 +85,7 @@ pub fn main() {
                 .takes_value(true)
                 .required(true))
             .arg(Arg::with_name("grantees")
+                .long("grantees")
                 .index(2)
                 .takes_value(true)
                 .required(true)))
@@ -94,10 +103,12 @@ pub fn main() {
                 .validator(password::validate_password_source))
             .arg(Arg::with_name("withhold")
                 .long("withhold")
-                .takes_value(true))
+                .takes_value(true)
+                .multiple(true))
             .arg(Arg::with_name("only")
                 .long("only")
-                .takes_value(true))
+                .takes_value(true)
+                .multiple(true))
             .arg(Arg::with_name("copy")
                 .long("copy")
                 .takes_value(false))
@@ -117,15 +128,25 @@ pub fn main() {
                 .validator(password::validate_password_source))
             .arg(Arg::with_name("grants")
                 .long("grants")
-                .takes_value(true)))
-        .subcommand(SubCommand::with_name("echo-password")
-            // a command for testing the password source system
-            .arg(Arg::with_name("source")
-                .index(1)
                 .takes_value(true)
-                .required(true)
-                .hidden(true)
-                .validator(password::validate_password_source)));
+                .multiple(true)))
+        .subcommand(SubCommand::with_name("list")
+            .about("list services")
+            .arg(Arg::with_name("mine")
+                .long("mine")
+                .multiple(true)
+                .help("services that I hold grants for"))
+            .arg(Arg::with_name("all")
+                .long("all")
+                .help("all services"))
+            .arg(Arg::with_name("grantee")
+                .help("services that a given person holds grants for")
+                .long("grantee")
+                .multiple(true)
+                .takes_value(true))
+            .group(ArgGroup::with_name("for whom")
+                .args(&["all", "mine", "grantee"])))
+        ;
 
     let matches = clapapp.get_matches();
 
@@ -240,21 +261,26 @@ pub fn main() {
                      server_info.printable_report().unwrap());
         }
         ("info", Some(subargs)) => {
-            let service_name: String = subargs.value_of("service_name").unwrap().to_string();
-            let service = instance.get_service(service_name).unwrap();
-            println!("\
-                name: {}\n\
-                created: {}\n\
-                modified: {}\n\
-                creator: {}\n\
-                modified by: {}\
-                ",
-                service.name,
-                utils::pretty_date(service.created),
-                utils::pretty_date(service.modified),
-                service.creator,
-                service.modified_by,
-            );
+            let service_names: Vec<String> = subargs.values_of("service_name")
+                .unwrap()
+                .map(|w| w.to_owned())
+                .collect();
+            for service_name in service_names {
+                let service = instance.get_service(service_name).unwrap();
+                println!("\
+                    {}:\n\
+                    \tcreated: {}\n\
+                    \tmodified: {}\n\
+                    \tcreator: {}\n\
+                    \tmodified by: {}\
+                    ",
+                    service.name,
+                    utils::pretty_date(service.created),
+                    utils::pretty_date(service.modified),
+                    service.creator,
+                    service.modified_by,
+                );
+            }
         }
         ("get", Some(subargs)) => {
             let service_name: String = subargs.value_of("service_name").unwrap().to_string();
@@ -276,12 +302,12 @@ pub fn main() {
             let rotation_stategy =
                 if !subargs.is_present("rotation strategy") || subargs.is_present("copy") {
                     client::RotationStrategy::Copy
-                } else if let Some(who) = subargs.value_of("withhold") {
-                    let who = who.split(",").map(|s| s.to_owned()).collect();
-                    client::RotationStrategy::Withhold(who)
-                } else if let Some(who) = subargs.value_of("only") {
-                    let who = who.split(",").map(|s| s.to_owned()).collect();
-                    client::RotationStrategy::Only(who)
+                } else if let Some(whos) = subargs.values_of("withhold") {
+                    let whos = whos.map(|w| w.to_owned()).collect();
+                    client::RotationStrategy::Withhold(whos)
+                } else if let Some(whos) = subargs.values_of("only") {
+                    let whos = whos.map(|w| w.to_owned()).collect();
+                    client::RotationStrategy::Only(whos)
                 } else {
                     unreachable!()
                 };
@@ -294,6 +320,36 @@ pub fn main() {
             let secret_value = secret_value.as_bytes().to_owned();
 
             instance.rotate_service(service_name, rotation_stategy, secret_value).unwrap();
+        },
+        ("list", Some(subargs)) => {
+            if !subargs.is_present("for whom") || subargs.is_present("all") {
+                // list all services
+                for service in instance.all_services().unwrap() {
+                    println!("{}", service.name);
+                }
+            } else if subargs.is_present("mine") || subargs.is_present("grantee") {
+                // list all services that a given user holds a grant for
+                let grantee_names = if subargs.is_present("mine") {
+                        vec![instance.username().unwrap()]
+                    } else if let Some(grantee_names) = subargs.values_of("grantee") {
+                        grantee_names.map(|s| s.to_owned()).collect()
+                    } else {
+                        unreachable!()
+                    };
+
+                for grantee_name in &grantee_names {
+                    let grants = instance.grants_for_grantee(&grantee_name).unwrap();
+                    for grant in grants {
+                        if grantee_names.len() == 1 {
+                            println!("{}", grant.service_name);
+                        } else {
+                            println!("{}", grant.key());
+                        }
+                    }
+                }
+            } else {
+                unreachable!()
+            }
         },
 
         _ => unreachable!(),

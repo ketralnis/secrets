@@ -7,14 +7,14 @@ mkdir tmp
 
 export RUST_BACKTRACE=1
 
-cargo test
-cargo build # in dev mode
+cargo test # also builds it
 
-export RUST_LOG=debug
+export RUST_LOG="secrets=debug"
 
 SERVER="./target/debug/secrets-server -d ./tmp/server.db"
 
 $SERVER init -n $(hostname)
+sqlite3 ./tmp/server.db .dump
 $SERVER server-info
 
 $SERVER server &
@@ -42,7 +42,7 @@ for new_user in dking florence; do
 
     yes | $CLIENT join -u $new_user -h $(hostname):4430 > tmp/$new_user.request
     cat tmp/$new_user.request
-    sqlite3 tmp/$new_user.db .dump
+    sqlite3 "tmp/client-${new_user}.db" .dump
 
     $CLIENT client-info
     $CLIENT server-info
@@ -72,23 +72,25 @@ $CLIENT_DAVID get twitter | grep twitterpass
 $CLIENT_DAVID grant twitter florence
 $CLIENT_DAVID grant twitter florence,dking # dking is implied
 
-yes y | $CLIENT_DAVID rotate twitter --source=pass:newtwitterpass1 --withhold florence
+yes | $CLIENT_DAVID rotate twitter --source=pass:newtwitterpass1 --withhold florence
 $CLIENT_DAVID get twitter
 ! $CLIENT_FLORENCE get twitter
-yes y | $CLIENT_FLORENCE rotate twitter --source=pass:newtwitterpass2 --only florence
+yes | $CLIENT_FLORENCE rotate twitter --source=pass:newtwitterpass2 --only florence
 ! $CLIENT_DAVID get twitter
 $CLIENT_FLORENCE get twitter
-yes y | $CLIENT_DAVID rotate twitter --source=pass:newtwitterpass3 --only dking
+yes | $CLIENT_DAVID rotate twitter --source=pass:newtwitterpass3 --only dking
 $CLIENT_DAVID get twitter
 ! $CLIENT_FLORENCE get twitter
 
 $CLIENT_DAVID list --mine | grep twitter
 ! $CLIENT_FLORENCE list --mine | grep twitter
 
+$CLIENT_DAVID list | grep twitter
 $CLIENT_DAVID list --all | grep twitter
 $CLIENT_FLORENCE list --all | grep twitter
 
-$CLIENT_FLORENCE list --grantee=dking | grep twitter
+$CLIENT_FLORENCE list --grantee=dking | grep '^twitter'
+$CLIENT_FLORENCE list --grantee=dking,florence | grep twitter::
 
 $CLIENT_DAVID grants twitter | grep florence
 $CLIENT_DAVID grants twitter | grep dking

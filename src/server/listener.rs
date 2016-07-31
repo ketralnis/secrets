@@ -107,7 +107,7 @@ impl ServerHandler {
                 }
             }
 
-            if let Some(service_names) = query_params.get("grantees") {
+            if let Some(service_names) = query_params.get("grants-for-service") {
                 // they want a list of all Grants to the given Service. This is
                 // usually because they're about to rotate it, so we include the
                 // users as well. We don't include the grantors for those Grants
@@ -129,6 +129,32 @@ impl ServerHandler {
 
                         api.users.insert(grantee.username.clone(), grantee);
                     }
+                }
+            }
+
+            if let Some(grantee_names) = query_params.get("grants-for-grantee") {
+                for grantee_name in grantee_names {
+                    // list all grants held by this person
+
+                    // check that the user exists
+                    let grantee = try!(instance.get_user(&grantee_name));
+                    api.users.insert(grantee.username.clone(), grantee);
+
+                    for grant in try!(instance.get_grants_for_grantee(&grantee_name)) {
+                        let service = try!(instance.get_service(&grant.service_name));
+                        api.services.insert(service.name.clone(), service);
+
+                        api.grants
+                            .entry(grant.service_name.clone())
+                            .or_insert_with(|| HashMap::new())
+                            .insert(grantee_name.clone(), grant);
+                    }
+                }
+            }
+
+            if let Some(_) = query_params.get("all-services") {
+                for service in try!(instance.all_services()) {
+                    api.services.insert(service.name.clone(), service);
                 }
             }
 

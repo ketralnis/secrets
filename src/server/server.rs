@@ -150,8 +150,23 @@ impl SecretsServer {
             WHERE service_name=?
             ",
             &[service_name],
-            Service::from_row));
+            |r| Service::from_row(&r)));
         return Ok(service);
+    }
+
+    pub fn all_services(&self) -> Result<Vec<Service>, SecretsError> {
+        let mut ret = vec![];
+        let mut stmt = try!(self.db.prepare("
+            SELECT service_name, created, modified, creator, modified_by
+            FROM services
+            "));
+        let services = try!(stmt.query_and_then(&[],
+                                                |r| Service::from_row(r)));
+        for maybe_service in services {
+            let service = try!(maybe_service);
+            ret.push(service)
+        }
+        return Ok(ret);
     }
 
     pub fn service_exists(&self,
@@ -302,6 +317,30 @@ impl SecretsServer {
             WHERE service_name = ?
             "));
         let grants = try!(stmt.query_and_then(&[service_name],
+                                              |r| Grant::from_row(r)));
+        for maybe_grant in grants {
+            let grant = try!(maybe_grant);
+            // verify the signature so we don't return invalid grants
+            let grantor = try!(self.get_user(&grant.grantor));
+            try!(grant.verify_signature(&grantor.public_sign));
+
+            ret.push(grant);
+        }
+
+        return Ok(ret);
+    }
+
+    pub fn get_grants_for_grantee(&self, grantee_name: &String)
+                                  -> Result<Vec<Grant>, SecretsError> {
+        let mut ret = vec![];
+        let _: User = try!(self.get_user(&grantee_name));
+        let mut stmt = try!(self.db.prepare("
+            SELECT service_name, grantee, grantor, ciphertext, signature,
+                   created
+            FROM grants
+            WHERE grantee = ?
+            "));
+        let grants = try!(stmt.query_and_then(&[grantee_name],
                                               |r| Grant::from_row(r)));
         for maybe_grant in grants {
             let grant = try!(maybe_grant);
