@@ -415,7 +415,7 @@ pub fn main() {
             let editor = subargs.value_of("editor").map(|s| s.to_owned());
             let plaintext = decrypted_grant.plaintext;
             let new_value = password::edit(editor,
-                                           plaintext.clone())
+                                           &plaintext)
                 .unwrap();
             if !utils::constant_time_compare(&plaintext, &new_value) {
                 instance.rotate_service(&service_name,

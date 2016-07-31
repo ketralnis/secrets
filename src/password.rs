@@ -101,14 +101,14 @@ pub fn evaluate_password_source(source: PasswordSource)
             Ok(val)
         }
         PasswordSource::Edit(editor) => {
-            let val = try!(edit(editor, Vec::new()));
+            let val = try!(edit(editor, &b""[..]));
             let password = try!(String::from_utf8(val));
             return Ok(password);
         }
     }
 }
 
-pub fn edit(chosen_editor: Option<String>, initial_contents: Vec<u8>)
+pub fn edit(chosen_editor: Option<String>, initial_contents: &[u8])
             -> Result<Vec<u8>, PasswordError> {
     let editor = if chosen_editor.is_some() {
             chosen_editor.unwrap()
@@ -123,7 +123,7 @@ pub fn edit(chosen_editor: Option<String>, initial_contents: Vec<u8>)
 
     let mut tfile = try!(tempfile::NamedTempFile::new());
 
-    try!(tfile.write(&initial_contents));
+    try!(tfile.write(initial_contents));
     try!(tfile.sync_all());
 
     let md = try!(tfile.metadata());
