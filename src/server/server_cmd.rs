@@ -1,9 +1,7 @@
 use std::fs::File;
-use std::io;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
-use std::process::exit;
 
 use clap::{Arg, App, AppSettings, SubCommand};
 use env_logger;
@@ -76,9 +74,7 @@ pub fn main() {
     // the only command that's valid if the DB doesn't exist is init
     if let ("init", Some(subargs)) = matches.subcommand() {
         if config_exists {
-            io::stderr().write(config_file.as_os_str().as_bytes()).unwrap();
-            io::stderr().write(b" already exists\n").unwrap();
-            exit(1);
+            panic!("{} already exists", config_file.to_str().unwrap());
         }
         let cn = subargs.value_of("name").unwrap().to_string();
         let instance = server::SecretsServer::create(config_file, cn, pw)
@@ -90,9 +86,7 @@ pub fn main() {
     }
 
     if !config_exists {
-        io::stderr().write(config_file.as_os_str().as_bytes()).unwrap();
-        io::stderr().write(b" not found. did you init?\n").unwrap();
-        exit(1);
+        panic!("{} not found. did you init?", config_file.to_str().unwrap());
     }
 
     // everyone else needs the server set up

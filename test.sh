@@ -74,7 +74,7 @@ $CLIENT_DAVID info twitter,twitter2 | grep david
 
 $CLIENT_DAVID get twitter
 $CLIENT_DAVID get twitter | grep twitterpass
-$CLIENT_DAVID get twitter | grep twitterpass
+$CLIENT_DAVID get twitter,twitter2 | grep twitterpass
 
 $CLIENT_DAVID grant twitter florence
 $CLIENT_DAVID grant twitter florence,david # david is implied
@@ -110,8 +110,7 @@ $CLIENT_DAVID user david
 EDITOR=$(which true) $CLIENT_DAVID edit twitter
 $CLIENT_DAVID edit --editor=$(which true) twitter
 
-$CLIENT_FLORENCE get twitter | grep twitterpass
-
+$CLIENT_FLORENCE get twitter2 | grep twitterpass
 ! $SERVER fire florence
 $SERVER fire florence 2>&1 | grep -E "twitter"
 $SERVER fire florence
