@@ -87,7 +87,8 @@ impl ServerHandler {
 
             if let Some(grant_names) = query_params.get("grant") {
                 for ref grant_name in grant_names {
-                    let (service_name, grantee_name) = Grant::split_key(grant_name);
+                    let (service_name, grantee_name) =
+                        Grant::split_key(grant_name);
 
                     let grant = try!(instance.get_grant(&service_name,
                                                         &grantee_name));
@@ -107,7 +108,8 @@ impl ServerHandler {
                 }
             }
 
-            if let Some(service_names) = query_params.get("grants-for-service") {
+            if let Some(service_names) =
+                   query_params.get("grants-for-service") {
                 // they want a list of all Grants to the given Service. This is
                 // usually because they're about to rotate it, so we include the
                 // users as well. We don't include the grantors for those Grants
@@ -118,7 +120,8 @@ impl ServerHandler {
                     let service = try!(instance.get_service(service_name));
                     api.services.insert(service.name.clone(), service);
 
-                    let grants = try!(instance.get_grants_for_service(service_name));
+                    let grants =
+                        try!(instance.get_grants_for_service(service_name));
                     for grant in grants {
                         let grantee = try!(instance.get_user(&grant.grantee));
 
@@ -132,7 +135,8 @@ impl ServerHandler {
                 }
             }
 
-            if let Some(grantee_names) = query_params.get("grants-for-grantee") {
+            if let Some(grantee_names) =
+                   query_params.get("grants-for-grantee") {
                 for grantee_name in grantee_names {
                     // list all grants held by this person
 
@@ -140,8 +144,11 @@ impl ServerHandler {
                     let grantee = try!(instance.get_user(&grantee_name));
                     api.users.insert(grantee.username.clone(), grantee);
 
-                    for grant in try!(instance.get_grants_for_grantee(&grantee_name)) {
-                        let service = try!(instance.get_service(&grant.service_name));
+                    let grants = try!(
+                        instance.get_grants_for_grantee(&grantee_name));
+                    for grant in grants {
+                        let service =
+                            try!(instance.get_service(&grant.service_name));
                         api.services.insert(service.name.clone(), service);
 
                         api.grants

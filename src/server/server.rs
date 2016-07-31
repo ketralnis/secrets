@@ -51,8 +51,7 @@ impl SecretsServer {
                        jr: JoinRequest)
                        -> Result<User, SecretsError> {
         if jr.server_info != try!(self.get_peer_info()) {
-            return Err(SecretsError::Authentication("server_info doesn't \
-                                                     match"));
+            return Err(SecretsError::Authentication("server_info doesn't match"));
         }
 
         if try!(self.user_exists(&jr.client_info.cn)) {
@@ -81,11 +80,11 @@ impl SecretsServer {
                    public_sign: sign::PublicKey)
                    -> Result<User, SecretsError> {
         let now = UTC::now().timestamp();
-        try!(self.db.execute("
-            INSERT INTO users(username, ssl_fingerprint,
-                              public_key, public_sign,
-                              created)
-            VALUES(?,?,?,?,?)
+        try!(self.db.execute(
+            "INSERT INTO users(username, ssl_fingerprint,
+                               public_key, public_sign,
+                               created)
+             VALUES(?,?,?,?,?)
             ",
             &[&username,
               &ssl_fingerprint,
@@ -97,14 +96,14 @@ impl SecretsServer {
     }
 
     pub fn get_user(&self, username: &String) -> Result<User, SecretsError> {
-        let user = try!(self.db.query_row_and_then("
-            SELECT username, public_key, public_sign, ssl_fingerprint,
-                   created, disabled
-            FROM users
-            WHERE username=?
+        let user = try!(self.db.query_row_and_then(
+            "SELECT username, public_key, public_sign, ssl_fingerprint,
+                    created, disabled
+             FROM users
+             WHERE username=?
             ",
             &[username],
-              User::from_row));
+            User::from_row));
         return Ok(user);
     }
 
@@ -142,24 +141,23 @@ impl SecretsServer {
     pub fn get_service(&self,
                        service_name: &String)
                        -> Result<Service, SecretsError> {
-        let service = try!(self.db.query_row_and_then("
-            SELECT service_name, created, modified, creator, modified_by
-            FROM services
-            WHERE service_name=?
-            ",
-            &[service_name],
-            |r| Service::from_row(&r)));
+        let service = try!(self.db.query_row_and_then(
+                "SELECT service_name, created, modified, creator, modified_by
+                 FROM services
+                 WHERE service_name=?
+                 ",
+                &[service_name],
+                |r| Service::from_row(&r)));
         return Ok(service);
     }
 
     pub fn all_services(&self) -> Result<Vec<Service>, SecretsError> {
         let mut ret = vec![];
-        let mut stmt = try!(self.db.prepare("
-            SELECT service_name, created, modified, creator, modified_by
-            FROM services
+        let mut stmt = try!(self.db.prepare(
+            "SELECT service_name, created, modified, creator, modified_by
+             FROM services
             "));
-        let services = try!(stmt.query_and_then(&[],
-                                                |r| Service::from_row(r)));
+        let services = try!(stmt.query_and_then(&[], |r| Service::from_row(r)));
         for maybe_service in services {
             let service = try!(maybe_service);
             ret.push(service)
@@ -237,10 +235,10 @@ impl SecretsServer {
             return Err(SecretsError::ServerError("you're lying".to_string()));
         }
 
-        try!(trans.execute("
-            INSERT INTO services(service_name, created, modified,
-                                 creator, modified_by)
-            VALUES(?,?,?,?,?)
+        try!(trans.execute(
+            "INSERT INTO services(service_name, created, modified,
+                                  creator, modified_by)
+             VALUES(?,?,?,?,?)
             ",
             &[&service.name,
               &service.created,
@@ -273,11 +271,10 @@ impl SecretsServer {
 
         try!(grant.verify_signature(&auth_user.public_sign));
 
-        try!(trans.execute("
-            INSERT OR IGNORE -- TODO ignore is best?
-            INTO grants(service_name, grantor, grantee, ciphertext,
-                        signature, created)
-            VALUES (?,?,?,?,?,?)
+        try!(trans.execute("INSERT OR IGNORE -- TODO ignore is best?
+             INTO grants(service_name, grantor, grantee, ciphertext,
+                         signature, created)
+             VALUES (?,?,?,?,?,?)
             ",
             &[&grant.service_name,
               &grant.grantor,
@@ -293,26 +290,25 @@ impl SecretsServer {
                       auth_user: &User,
                       service: &Service)
                       -> Result<(), SecretsError> {
-        try!(trans.execute("
-            UPDATE services
-            SET modified_by=?, modified=?
-            WHERE service_name=?
+        try!(trans.execute(
+            "UPDATE services
+             SET modified_by=?, modified=?
+             WHERE service_name=?
             ",
-            &[&auth_user.username,
-              &now,
-              &service.name]));
+            &[&auth_user.username, &now, &service.name]));
         return Ok(());
     }
 
-    pub fn get_grants_for_service(&self, service_name: &String)
+    pub fn get_grants_for_service(&self,
+                                  service_name: &String)
                                   -> Result<Vec<Grant>, SecretsError> {
         let mut ret = vec![];
         let _: Service = try!(self.get_service(service_name));
-        let mut stmt = try!(self.db.prepare("
-            SELECT service_name, grantee, grantor, ciphertext, signature,
-                   created
-            FROM grants
-            WHERE service_name = ?
+        let mut stmt = try!(self.db.prepare(
+            "SELECT service_name, grantee, grantor, ciphertext, signature,
+                    created
+             FROM grants
+             WHERE service_name = ?
             "));
         let grants = try!(stmt.query_and_then(&[service_name],
                                               |r| Grant::from_row(r)));
@@ -328,15 +324,16 @@ impl SecretsServer {
         return Ok(ret);
     }
 
-    pub fn get_grants_for_grantee(&self, grantee_name: &String)
+    pub fn get_grants_for_grantee(&self,
+                                  grantee_name: &String)
                                   -> Result<Vec<Grant>, SecretsError> {
         let mut ret = vec![];
         let _: User = try!(self.get_user(&grantee_name));
-        let mut stmt = try!(self.db.prepare("
-            SELECT service_name, grantee, grantor, ciphertext, signature,
-                   created
-            FROM grants
-            WHERE grantee = ?
+        let mut stmt = try!(self.db.prepare(
+            "SELECT service_name, grantee, grantor, ciphertext, signature,
+                    created
+             FROM grants
+             WHERE grantee = ?
             "));
         let grants = try!(stmt.query_and_then(&[grantee_name],
                                               |r| Grant::from_row(r)));
@@ -370,8 +367,7 @@ impl SecretsServer {
 
         let trans = try!(self.db.transaction());
         for grant in grants {
-            try!(Self::_create_grant(&trans, now, &auth_user,
-                                     &service, grant));
+            try!(Self::_create_grant(&trans, now, &auth_user, &service, grant));
         }
         try!(trans.commit());
         return Ok(());
@@ -400,8 +396,7 @@ impl SecretsServer {
                            &[service_name]));
         // add the new ones
         for grant in grants {
-            try!(Self::_create_grant(&trans, now, &auth_user,
-                                     &service, grant));
+            try!(Self::_create_grant(&trans, now, &auth_user, &service, grant));
         }
         try!(Self::_touch_service(&trans, now, &auth_user, &service));
         try!(trans.commit());
@@ -413,11 +408,11 @@ impl SecretsServer {
                      service_name: &String,
                      grantee_name: &String)
                      -> Result<Grant, SecretsError> {
-        let grant = try!(self.db.query_row_and_then("
-            SELECT service_name, grantee, grantor, ciphertext, signature,
-                   created
-            FROM grants
-            WHERE service_name = ? AND grantee = ?
+        let grant = try!(self.db.query_row_and_then(
+            "SELECT service_name, grantee, grantor, ciphertext, signature,
+                    created
+             FROM grants
+             WHERE service_name = ? AND grantee = ?
             ",
             &[service_name, grantee_name],
             |r| Grant::from_row(&r)));
@@ -486,7 +481,7 @@ fn create_server_schema(conn: &mut rusqlite::Connection)
             PRIMARY KEY(grantee, service_name)
         );
         CREATE INDEX grants_services ON grants(service_name);
-    "));
+        "));
 
     Ok(())
 }
@@ -520,21 +515,21 @@ mod tests {
         let (d_public_key, _d_private_key) = box_::gen_keypair();
         let (d_public_sign, _d_private_sign) = sign::gen_keypair();
         let david = server.create_user("david".to_string(),
-                                       "david_fingerprint".to_string(),
-                                       d_public_key,
-                                       d_public_sign)
+                         "david_fingerprint".to_string(),
+                         d_public_key,
+                         d_public_sign)
             .unwrap();
         let authenticated = server.authenticate(&"david".to_string(),
-                                                &"david_fingerprint".to_string())
+                          &"david_fingerprint".to_string())
             .unwrap();
         assert_eq!(david.username, authenticated.username);
 
         let (f_public_key, _f_private_key) = box_::gen_keypair();
         let (f_public_sign, _f_private_sign) = sign::gen_keypair();
         let _florence = server.create_user("florence".to_string(),
-                                           "florence_fingerprint".to_string(),
-                                           f_public_key,
-                                           f_public_sign)
+                         "florence_fingerprint".to_string(),
+                         f_public_key,
+                         f_public_sign)
             .unwrap();
     }
 }

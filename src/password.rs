@@ -108,18 +108,20 @@ pub fn evaluate_password_source(source: PasswordSource)
     }
 }
 
-pub fn edit(chosen_editor: Option<String>, initial_contents: &[u8])
+pub fn edit(chosen_editor: Option<String>,
+            initial_contents: &[u8])
             -> Result<Vec<u8>, PasswordError> {
     let editor = if chosen_editor.is_some() {
-            chosen_editor.unwrap()
-        } else if env::var("VISUAL").is_ok() {
-            env::var("VISUAL").unwrap()
-        } else if env::var("EDITOR").is_ok() {
-            env::var("EDITOR").unwrap()
-        } else {
-            return Err(PasswordError::Editor("editor not specified and \
-                                              $VISUAL/$EDITOR unset".to_string()));
-        };
+        chosen_editor.unwrap()
+    } else if env::var("VISUAL").is_ok() {
+        env::var("VISUAL").unwrap()
+    } else if env::var("EDITOR").is_ok() {
+        env::var("EDITOR").unwrap()
+    } else {
+        return Err(PasswordError::Editor("editor not specified and \
+                                              $VISUAL/$EDITOR unset"
+            .to_string()));
+    };
 
     let mut tfile = try!(tempfile::NamedTempFile::new());
 
@@ -135,7 +137,8 @@ pub fn edit(chosen_editor: Option<String>, initial_contents: &[u8])
     let tfile_path = try!(tfile.path()
         .to_str()
         .ok_or(PasswordError::Editor("couldn't de-str the tempfile \
-                                      name?".to_string())));
+                                      name?"
+            .to_string())));
     let command = format!("{} {}", editor, tfile_path);
     let mut child = try!(Command::new("/bin/sh")
         .arg("-c")
@@ -147,8 +150,8 @@ pub fn edit(chosen_editor: Option<String>, initial_contents: &[u8])
     debug!("editor returned with {:?}", ecode.code());
 
     if !ecode.success() {
-        return Err(PasswordError::Editor(
-            format!("editor failed with {:?}", ecode.code())));
+        return Err(PasswordError::Editor(format!("editor failed with {:?}",
+                                                 ecode.code())));
     }
     let mut reread = try!(File::open(tfile.path()));
     let mut inputted: Vec<u8> = Vec::new();

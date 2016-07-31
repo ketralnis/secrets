@@ -106,27 +106,27 @@ pub fn check_db(conn: &rusqlite::Connection) -> Result<(), rusqlite::Error> {
 
 fn pragmas(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error> {
     // sqlite config that must be done on every connection
-    conn.execute_batch("
-        PRAGMA foreign_keys=ON;
-        PRAGMA journal_mode=DELETE;
-        PRAGMA secure_delete=true;
+    conn.execute_batch(
+        "PRAGMA foreign_keys=ON;
+         PRAGMA journal_mode=DELETE;
+         PRAGMA secure_delete=true;
 
-        -- this is a (probably misguided) attempt to keep password data off of
-        -- disk at the expense of potentially crashing with OOM
-        PRAGMA temp_store=MEMORY;
-    ")
+          -- this is a (probably misguided) attempt to keep password data off of
+          -- disk at the expense of potentially crashing with OOM
+         PRAGMA temp_store=MEMORY;
+        ")
 }
 
 fn create_common_schema(conn: &mut rusqlite::Connection)
                         -> Result<(), rusqlite::Error> {
-    conn.execute_batch("
-        CREATE TABLE globals (
-            key PRIMARY KEY NOT NULL,
-            value NOT NULL,
-            encrypted BOOL NOT NULL,
-            modified INT NOT NULL
-        );
-    ")
+    conn.execute_batch(
+        "CREATE TABLE globals (
+             key PRIMARY KEY NOT NULL,
+             value NOT NULL,
+             encrypted BOOL NOT NULL,
+             modified INT NOT NULL
+        );"
+    )
 }
 
 pub trait SecretsContainer {
@@ -232,9 +232,9 @@ pub trait SecretsContainer {
                                            value: &'a T)
                                            -> Result<(), SecretsError> {
         let conn = self.get_db();
-        try!(conn.execute("
-            INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
-            VALUES(?, ?, ?, 0)",
+        try!(conn.execute(
+            "INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
+             VALUES(?, ?, ?, 0)",
             &[&key_name, value, &UTC::now().timestamp()]));
         Ok(())
     }
@@ -244,9 +244,9 @@ pub trait SecretsContainer {
                             -> Result<Vec<u8>, SecretsError> {
         let ciphertext: Vec<u8> = try!({
             let conn = self.get_db();
-            conn.query_row("
-                SELECT value FROM globals WHERE key = ? AND \
-                encrypted",
+            conn.query_row(
+                "SELECT value FROM globals WHERE key = ? AND \
+                 encrypted",
                 &[&key_name],
                 |row| row.get(0))
         });
@@ -266,9 +266,9 @@ pub trait SecretsContainer {
         });
 
         let db = self.get_db();
-        try!(db.execute("
-            INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
-            VALUES(?, ?, ?, 1)",
+        try!(db.execute(
+            "INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
+             VALUES(?, ?, ?, 1)",
             &[&key_name, &ciphertext, &UTC::now().timestamp()]));
         return Ok(());
     }

@@ -240,8 +240,7 @@ pub fn main() {
         let client_report =
             client.get_peer_info().unwrap().printable_report().unwrap();
         io::stderr()
-            .write(format!("{}", client_report)
-                .as_bytes())
+            .write(format!("{}", client_report).as_bytes())
             .unwrap();
         let jr = client.join_request().unwrap();
         io::stderr()
@@ -266,12 +265,13 @@ pub fn main() {
         ("create", Some(subargs)) => {
             let service_name = subargs.value_of("service_name").unwrap();
             let grantees: Vec<String> = if subargs.is_present("grant") {
-                    subargs.values_of("grant").unwrap()
-                        .map(|w| w.to_owned())
-                        .collect()
-                } else {
-                    Vec::new()
-                };
+                subargs.values_of("grant")
+                    .unwrap()
+                    .map(|w| w.to_owned())
+                    .collect()
+            } else {
+                Vec::new()
+            };
             let secret_source = subargs.value_of("source").unwrap();
             let secret_source = password::parse_password_source(secret_source)
                 .unwrap();
@@ -289,7 +289,7 @@ pub fn main() {
         ("server-info", Some(_)) => {
             let server_info = instance.get_server_info().unwrap();
             println!("{}", server_info.printable_report().unwrap());
-        },
+        }
         ("user", Some(subargs)) => {
             let usernames: Vec<String> = subargs.values_of("username")
                 .unwrap()
@@ -300,7 +300,7 @@ pub fn main() {
                 let peer_info = user.to_peer_info();
                 println!("{}", peer_info.printable_report().unwrap());
             }
-        },
+        }
         ("grant-info", Some(subargs)) => {
             let grant_names: Vec<String> = subargs.values_of("grant_name")
                 .unwrap()
@@ -310,7 +310,7 @@ pub fn main() {
                 let grant = instance.get_grant(&grant_name).unwrap();
                 println!("{}", grant.printable_report());
             }
-        },
+        }
         ("info", Some(subargs)) => {
             let service_names: Vec<String> = subargs.values_of("service_name")
                 .unwrap()
@@ -320,28 +320,37 @@ pub fn main() {
                 let service = instance.get_service(&service_name).unwrap();
                 println!("{}", service.printable_report());
             }
-        },
+        }
         ("get", Some(subargs)) => {
-            let service_names: Vec<String> = subargs.values_of("service_name").unwrap()
-                .map(|s| s.to_owned()).collect();
+            let service_names: Vec<String> = subargs.values_of("service_name")
+                .unwrap()
+                .map(|s| s.to_owned())
+                .collect();
             for service_name in service_names {
-                let decrypted_grant = instance.get_decrypted_grant(&service_name).unwrap();
+                let decrypted_grant =
+                    instance.get_decrypted_grant(&service_name).unwrap();
 
                 io::stdout().write(&decrypted_grant.plaintext).unwrap();
                 io::stdout().write(b"\n").unwrap();
             }
-        },
+        }
         ("grant", Some(subargs)) => {
-            let service_name: String = subargs.value_of("service_name").unwrap().to_string();
-            let grantees: Vec<String> = subargs.values_of("grantee").unwrap().map(|s|s.to_owned()).collect();
+            let service_name: String =
+                subargs.value_of("service_name").unwrap().to_string();
+            let grantees: Vec<String> = subargs.values_of("grantee")
+                .unwrap()
+                .map(|s| s.to_owned())
+                .collect();
 
             instance.add_grants(service_name, grantees).unwrap();
-        },
+        }
         ("rotate", Some(subargs)) => {
-            let service_name: String = subargs.value_of("service_name").unwrap().to_string();
+            let service_name: String =
+                subargs.value_of("service_name").unwrap().to_string();
 
             let rotation_stategy =
-                if !subargs.is_present("rotation strategy") || subargs.is_present("copy") {
+                if !subargs.is_present("rotation strategy") ||
+                   subargs.is_present("copy") {
                     client::RotationStrategy::Copy
                 } else if let Some(whos) = subargs.values_of("withhold") {
                     let whos = whos.map(|w| w.to_owned()).collect();
@@ -363,7 +372,7 @@ pub fn main() {
             instance.rotate_service(&service_name,
                                     rotation_stategy,
                                     secret_value).unwrap();
-        },
+        }
         ("list", Some(subargs)) => {
             if !subargs.is_present("for whom") || subargs.is_present("all") {
                 // list all services
@@ -373,15 +382,17 @@ pub fn main() {
             } else if subargs.is_present("mine") || subargs.is_present("grantee") {
                 // list all services that a given user holds a grant for
                 let grantee_names = if subargs.is_present("mine") {
-                        vec![instance.username().unwrap()]
-                    } else if let Some(grantee_names) = subargs.values_of("grantee") {
-                        grantee_names.map(|s| s.to_owned()).collect()
-                    } else {
-                        unreachable!()
-                    };
+                    vec![instance.username().unwrap()]
+                } else if let Some(grantee_names) =
+                                           subargs.values_of("grantee") {
+                    grantee_names.map(|s| s.to_owned()).collect()
+                } else {
+                    unreachable!()
+                };
 
                 for grantee_name in &grantee_names {
-                    let grants = instance.grants_for_grantee(&grantee_name).unwrap();
+                    let grants = instance.grants_for_grantee(&grantee_name)
+                        .unwrap();
                     for grant in grants {
                         if grantee_names.len() == 1 {
                             println!("{}", grant.service_name);
@@ -393,9 +404,10 @@ pub fn main() {
             } else {
                 unreachable!()
             }
-        },
+        }
         ("grants", Some(subargs)) => {
-            let service_names: Vec<String> = subargs.values_of("service_name").unwrap()
+            let service_names: Vec<String> = subargs.values_of("service_name")
+                .unwrap()
                 .map(|s| s.to_owned())
                 .collect();
             for service_name in &service_names {
@@ -408,19 +420,20 @@ pub fn main() {
                     }
                 }
             }
-        },
+        }
         ("edit", Some(subargs)) => {
-            let service_name = subargs.value_of("service_name").unwrap().to_string();
-            let decrypted_grant = instance.get_decrypted_grant(&service_name).unwrap();
+            let service_name =
+                subargs.value_of("service_name").unwrap().to_string();
+            let decrypted_grant = instance.get_decrypted_grant(&service_name)
+                .unwrap();
             let editor = subargs.value_of("editor").map(|s| s.to_owned());
             let plaintext = decrypted_grant.plaintext;
-            let new_value = password::edit(editor,
-                                           &plaintext)
-                .unwrap();
+            let new_value = password::edit(editor, &plaintext).unwrap();
             if !utils::constant_time_compare(&plaintext, &new_value) {
                 instance.rotate_service(&service_name,
-                                        client::RotationStrategy::Copy,
-                                        new_value).unwrap();
+                                    client::RotationStrategy::Copy,
+                                    new_value)
+                    .unwrap();
             }
         }
 
