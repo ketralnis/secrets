@@ -256,8 +256,15 @@ impl SecretsClient {
     pub fn create_service(&mut self,
                           service_name: String,
                           plaintext: Vec<u8>,
-                          grantees: Vec<String>)
+                          mut grantees: Vec<String>)
                           -> Result<(), SecretsError> {
+        let now = UTC::now().timestamp();
+        let username = try!(self.username());
+
+        if !grantees.contains(&username) {
+            grantees.push(username.clone());
+        }
+
         // make sure the service doesn't exist and look up the users that we'll
         // grant to to get their keys
         let mut req = SecretsRequest::new(Method::Get, "/api/info");
@@ -270,9 +277,6 @@ impl SecretsClient {
         if api_response.services.len() > 0 {
             return Err(SecretsError::ServiceAlreadyExists(service_name));
         }
-
-        let now = UTC::now().timestamp();
-        let username = try!(self.username());
 
         let service = Service {
             name: service_name.clone(),
@@ -500,16 +504,22 @@ impl SecretsClient {
 
     pub fn rotate_service(&self,
                           service_name: &String,
-                          rotation_strategy: RotationStrategy,
+                          rotation_strategy: &RotationStrategy,
                           plaintext: Vec<u8>)
                           -> Result<(), SecretsError> {
-        let now = UTC::now().timestamp();
         let username = try!(self.username());
 
         let mut req = SecretsRequest::new(Method::Get, "/api/info");
         req.add_arg("service", service_name.clone());
         req.add_arg("grants-for-service", service_name.clone());
-        if let RotationStrategy::Only(ref grantees) = rotation_strategy {
+
+        // this just simplifies some codepaths: rotations always include ourself
+        // even if we weren't specified in the rotation strategy. so by adding
+        // ourself to this list, we don't have to special-case ourself as a
+        // target when building the grants
+        req.add_arg("user", username.clone());
+
+        if let RotationStrategy::Only(ref grantees) = *rotation_strategy {
             // if we know who we're giving the new secret to, fetch those
             // people. For Copy or Withhold strategies, `grantees` will always
             // cover the new targets so we don't need to name them explicitly
@@ -517,6 +527,7 @@ impl SecretsClient {
                 req.add_arg("user", grantee.clone());
             }
         }
+
         let mut api_response = try!(self.server_request(req));
 
         // make sure the service exists
@@ -529,7 +540,7 @@ impl SecretsClient {
 
         let current_grants = service_block;
 
-        let mut new_grantee_names: Vec<String> = match rotation_strategy {
+        let mut new_grantee_names: Vec<String> = match *rotation_strategy {
             RotationStrategy::Copy => {
                 current_grants.keys().map(|s| s.to_owned()).collect()
             }
@@ -562,12 +573,13 @@ impl SecretsClient {
                  current_grantee_names.join(","));
         println!("New grantees:\n\t{}", new_grantee_names.join(","));
 
-        if rotation_strategy != RotationStrategy::Copy {
+        if *rotation_strategy != RotationStrategy::Copy {
             if !try!(utils::prompt_yn("does that look right? [y/n] ")) {
                 return Err(SecretsError::Authentication("refused"));
             }
         }
 
+        let now = UTC::now().timestamp();
         let new_grants = try!(self._create_grants(plaintext,
                                                   &service_name,
                                                   now,

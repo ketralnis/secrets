@@ -112,7 +112,8 @@ fn make_clap<'a, 'b>() -> App<'a, 'b> {
             .arg(Arg::with_name("service_name")
                 .index(1)
                 .takes_value(true)
-                .required(true))
+                .required(true)
+                .multiple(true))
             .arg(Arg::with_name("source")
                 .long("source")
                 .help(PASSWORD_SOURCE_HELP)
@@ -345,8 +346,13 @@ pub fn main() {
             instance.add_grants(service_name, grantees).unwrap();
         }
         ("rotate", Some(subargs)) => {
-            let service_name: String =
-                subargs.value_of("service_name").unwrap().to_string();
+            // we can rotate multiple services at once, as long as we hold a
+            // grant to all of them and they can all share the same rotation
+            // strategy and source type
+            let service_names: Vec<String> = subargs.values_of("service_name")
+                .unwrap()
+                .map(|s| s.to_owned())
+                .collect();
 
             let rotation_stategy =
                 if !subargs.is_present("rotation strategy") ||
@@ -362,16 +368,18 @@ pub fn main() {
                     unreachable!()
                 };
 
-            let secret_source = subargs.value_of("source").unwrap();
-            let secret_source = password::parse_password_source(secret_source)
-                .unwrap();
-            let secret_value =
-                password::evaluate_password_source(secret_source).unwrap();
-            let secret_value = secret_value.as_bytes().to_owned();
+            for service_name in service_names {
+                let secret_source = subargs.value_of("source").unwrap();
+                let secret_source = password::parse_password_source(secret_source)
+                    .unwrap();
+                let secret_value =
+                    password::evaluate_password_source(secret_source).unwrap();
+                let secret_value = secret_value.as_bytes().to_owned();
 
-            instance.rotate_service(&service_name,
-                                    rotation_stategy,
-                                    secret_value).unwrap();
+                instance.rotate_service(&service_name,
+                                        &rotation_stategy,
+                                        secret_value).unwrap();
+            }
         }
         ("list", Some(subargs)) => {
             if !subargs.is_present("for whom") || subargs.is_present("all") {
@@ -431,7 +439,7 @@ pub fn main() {
             let new_value = password::edit(editor, &plaintext).unwrap();
             if !utils::constant_time_compare(&plaintext, &new_value) {
                 instance.rotate_service(&service_name,
-                                    client::RotationStrategy::Copy,
+                                    &client::RotationStrategy::Copy,
                                     new_value)
                     .unwrap();
             }

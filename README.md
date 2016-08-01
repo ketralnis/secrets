@@ -50,3 +50,7 @@ ssh's (maybe try [termion](https://github.com/ticki/termion/blob/master/src/inpu
 * errors are a mess
 * wrapper type for passwords that can store derived keys as well as use Vec<u8> instead of String. Use these for secrets too. all of that encoding stuff is a mess
 * `edit` and `rotate` are not atomic. two people editing will clobber each other
+* firings are irreversible
+* firing plans can be optimise for fewest volunteers required
+* it should be possible to put bus-factor and admin-check in a cron job but right now those require a password
+* cron report that summarises bus-factor and fired people and maybe admin-check

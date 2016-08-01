@@ -95,6 +95,28 @@ impl SecretsServer {
         return Ok(user);
     }
 
+    pub fn fire_user(&self, username: &String, force: bool) -> Result<FireResult, SecretsError> {
+        let now = UTC::now().timestamp();
+        let user = try!(self.get_user(username));
+        let granted_services = try!(self.get_grants_for_grantee(username));
+
+        // by design, any passwords that the user might know should be returned
+        // by this. this is why we enforce that new services and rotations must
+        // always include the person setting the new secret
+        if !force && granted_services.len() > 0 {
+            return Ok(FireResult::OutstandingGrants{grants: granted_services});
+        }
+
+        if user.disabled.is_none() {
+            // if they weren't already disabled, mark the time.
+            try!(self.db.execute(
+                "UPDATE users SET disabled=? WHERE username=?",
+                &[&now, username]));
+        }
+
+        return Ok(FireResult::Success);
+    }
+
     pub fn get_user(&self, username: &String) -> Result<User, SecretsError> {
         let user = try!(self.db.query_row_and_then(
             "SELECT username, public_key, public_sign, ssl_fingerprint,
@@ -449,6 +471,12 @@ impl SecretsContainer for SecretsServer {
     fn get_password(&self) -> &String {
         return &self.password;
     }
+}
+
+#[derive(PartialEq, Debug)]
+pub enum FireResult {
+    Success,
+    OutstandingGrants {grants: Vec<Grant>},
 }
 
 fn create_server_schema(conn: &mut rusqlite::Connection)

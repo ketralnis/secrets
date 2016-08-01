@@ -13,6 +13,7 @@ chrono = "0.2"
 clap = "2.9.2"
 env_logger = "0.3.3"
 flate2 = "0.2.14"
+hyper = {version="0.9.7", features=["openssl"]}
 log = "0.3.6"
 openssl = "0.7.13"
 quick-error = "1.1.0"
@@ -27,7 +28,3 @@ sodiumoxide = "0.0.12"
 tempdir = "0.3"
 tempfile = "2.1.4"
 url = "1.0"
-
-[dependencies.hyper]
-version = "0.9.7"
-features = ["openssl"]

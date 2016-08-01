@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 set -e
 
@@ -8,12 +8,17 @@ fi
 
 export RUSTBACKTRACE=1
 export RUST_LOG="secrets=debug"
-export server="./target/debug/secrets-server -d ./tmp/server.db"
-export client="target/debug/secrets"
+export PATH=$PATH:$(pwd)/target/debug
+export server="secrets-server -d ./tmp/server.db"
+export client="secrets"
+
 export david="$client --db=./tmp/client-david.db -p pass:password_david"
 export CLIENT_DAVID="$david"
 export florence="$client --db=./tmp/client-florence.db -p pass:password_florence"
 export CLIENT_FLORENCE="$florence"
+export bob="$client --db=./tmp/client-bob.db -p pass:password_bob"
+export CLIENT_BOB="$bob"
+
 
 $server server &
 SERVER_PID=$!

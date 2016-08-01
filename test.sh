@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 set -ev
 
@@ -36,7 +36,7 @@ echo checking http health
 curl --insecure https://$(hostname):4430/api/health; echo ''
 curl --insecure https://$(hostname):4430/api/server; echo ''
 
-for new_user in david florence; do
+for new_user in david florence bob frank; do
     echo creating user $new_user
 
     CLIENT="./target/debug/secrets -d ./tmp/client-${new_user}.db -p pass:password_${new_user}"
@@ -60,6 +60,8 @@ for new_user in david florence; do
     $CLIENT user $new_user
 
     echo client successful
+
+    date | $CLIENT create ${new_user}_service --source=stdin
 done
 
 CLIENT_DAVID="./target/debug/secrets -d ./tmp/client-david.db -p pass:password_david"
@@ -112,10 +114,15 @@ $CLIENT_DAVID edit --editor=$(which true) twitter
 
 $CLIENT_FLORENCE get twitter2 | grep twitterpass
 ! $SERVER fire florence
+$CLIENT_FLORENCE check-server
 $SERVER fire florence 2>&1 | grep -E "twitter"
+$SERVER fire -f florence
+! $SERVER fire florence
+yes | $CLIENT_DAVID rotate twitter2,florence_service --withhold=florence --source=file:/etc/passwd
 $SERVER fire florence
 
-! $CLIENT_FLORENCE get twitter
+! $CLIENT_FLORENCE check-server
+! $CLIENT_FLORENCE get twitter2
 
 # tell me what services are in bus trouble
 $CLIENT_DAVID bus-factor
