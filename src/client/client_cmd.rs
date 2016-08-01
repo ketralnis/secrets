@@ -241,13 +241,14 @@ pub fn main() {
         let client_report =
             client.get_peer_info().unwrap().printable_report().unwrap();
         io::stderr()
-            .write(format!("{}", client_report).as_bytes())
+            .write(format!("{}\n", client_report).as_bytes())
             .unwrap();
         let jr = client.join_request().unwrap();
         io::stderr()
             .write("Send this to your friendly local secrets admin:\n"
                 .as_bytes())
             .unwrap();
+        io::stderr().flush().unwrap();
         let pastable = jr.to_pastable().unwrap();
         io::stdout().write(pastable.as_bytes()).unwrap();
         io::stdout().write("\n".as_bytes()).unwrap();

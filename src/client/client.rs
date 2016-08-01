@@ -86,6 +86,7 @@ impl SecretsClient {
 
         let server_report = try!(server_info.printable_report());
         try!(io::stderr().write(server_report.as_bytes()));
+        try!(io::stderr().write(b"\n"));
 
         if !try!(utils::prompt_yn("does that look right? [y/n] ")) {
             return Err(SecretsError::Authentication("refused"));
