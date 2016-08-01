@@ -2,3 +2,4 @@ target
 tmp
 *.swp
 *.rs.bk
+.vagrant
