@@ -8,42 +8,59 @@
 
 set -ev
 
-add-apt-repository -y ppa:chris-lea/libsodium
+if ! [ -f /usr/lib/x86_64-linux-gnu/libsodium.so ]; then
+    add-apt-repository -y ppa:chris-lea/libsodium
+    apt-get -y update
+    apt-get -y install libsodium-dev libsqlite3-dev openssl libssl-dev pkg-config gnupg
+fi
 
-apt-get -y update
-apt-get -y install libsodium-dev libsqlite3-dev openssl libssl-dev pkg-config gnupg
-
-# deal with a technicality with su -m
+# deal with a technicality with sudo -E
 chmod 755 /root
 
-cd /home/vagrant
-curl -sf https://static.rust-lang.org/rustup.sh > rustup.sh
-chmod u+x ./rustup.sh
-./rustup.sh >rustup.log 2>&1
-tail rustup.log
+if ! which cargo; then
+    cd /home/vagrant
+    curl -sf https://static.rust-lang.org/rustup.sh > rustup.sh
+    chmod u+x ./rustup.sh
+    ./rustup.sh >rustup.log 2>&1
+    tail rustup.log
+fi
 
 # build and install
-cd /home/vagrant/secrets
-su - vagrant -mc "cargo clean && cargo build --release"
-cargo install --root /usr/local
+if ! [ -f /usr/local/bin/secrets ]; then
+    cd /home/vagrant/secrets
+    sudo -u vagrant -EH -- /bin/sh -c "cargo clean"
+    sudo -u vagrant -EH -- /bin/sh -c "cargo build --release"
+    cargo install --root /usr/local
+fi
 
 # set up the server user
-adduser --disabled-password --gecos "" secrets-server
-# set up the server DB
-su - secrets-server -c "secrets-server -p pass: -d /home/secrets-server/secrets.db init --name $(hostname -f)"
+if ! id secrets-server; then
+    adduser --disabled-password --gecos "" secrets-server
+fi
 
-# set up the upstart service
-cat >/etc/init/secrets-server.conf<<HERE
+# set up the server DB
+if ! [ -f /home/secrets-server/secrets.db ]; then
+    su - secrets-server -c "secrets-server -p pass: -d /home/secrets-server/secrets.db init --name $(hostname -f)"
+fi
+
+if ! [ -f /etc/init/secrets-server.conf ]; then
+    # set up the upstart service
+    cat >/etc/init/secrets-server.conf<<HERE
 start on runlevel [2345]
 stop on runlevel [06]
 exec /usr/local/bin/secrets-server -p pass: -d /home/secrets-server/secrets.db server
 HERE
-service secrets-server start
+fi
+
+if ! pgrep -fl secrets-server; then
+    service secrets-server start
+    sleep 1 # give it a sec to start
+fi
 
 # set up and accept the vagrant user
-su - vagrant -mc "yes | secrets -p pass:password join -u vagrant -h $(hostname -f):4430 > /home/vagrant/vagrant.secrets-request"
-su - secrets-server -mc "yes | secrets-server -p pass: -d /home/secrets-server/secrets.db accept-join /home/vagrant/vagrant.secrets-request"
+sudo -u vagrant -EH -- /bin/sh -c "yes | secrets -p pass:password join -u vagrant -h $(hostname -f):4430 > /home/vagrant/vagrant.secrets-request"
+sudo -u secrets-server -EH -- /bin/sh -c "yes | secrets-server -p pass: -d /home/secrets-server/secrets.db accept-join /home/vagrant/vagrant.secrets-request"
 
 # create an example secret value
-su - vagrant -mc "echo 'dont tell noone' | secrets -p pass:password create --source=stdin sooper-sekrit"
-su - vagrant -mc "secrets -p pass:password list"
+sudo -u vagrant -EH -- /bin/sh -c "echo 'shh dont tell noone' | secrets -p pass:password create --source=stdin sooper-sekrit"
+sudo -u vagrant -EH -- /bin/sh -c "secrets -p pass:password list"
