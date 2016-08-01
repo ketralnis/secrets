@@ -370,15 +370,16 @@ pub fn main() {
 
             for service_name in service_names {
                 let secret_source = subargs.value_of("source").unwrap();
-                let secret_source = password::parse_password_source(secret_source)
-                    .unwrap();
+                let secret_source =
+                    password::parse_password_source(secret_source).unwrap();
                 let secret_value =
                     password::evaluate_password_source(secret_source).unwrap();
                 let secret_value = secret_value.as_bytes().to_owned();
 
                 instance.rotate_service(&service_name,
-                                        &rotation_stategy,
-                                        secret_value).unwrap();
+                                    &rotation_stategy,
+                                    secret_value)
+                    .unwrap();
             }
         }
         ("list", Some(subargs)) => {
