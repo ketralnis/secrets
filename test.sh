@@ -124,6 +124,10 @@ $SERVER fire florence
 ! $CLIENT_FLORENCE check-server
 ! $CLIENT_FLORENCE get twitter2
 
+exit 0
+
+# --------- TODO: --------
+
 # tell me what services are in bus trouble
 $CLIENT_DAVID bus-factor
 $CLIENT_DAVID bus-factor --min=2
