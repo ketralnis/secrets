@@ -23,6 +23,7 @@ use utils;
 
 fn make_clap<'a, 'b>() -> App<'a, 'b> {
     App::new("secrets-server")
+        .setting(AppSettings::SubcommandRequiredElseHelp)
         .arg(Arg::with_name("db")
             .short("d")
             .long("db")
@@ -37,9 +38,8 @@ fn make_clap<'a, 'b>() -> App<'a, 'b> {
              .takes_value(true)
              .default_value("pass:") // empty password
              .validator(password::validate_password_source))
-        .setting(AppSettings::SubcommandRequiredElseHelp)
         .subcommand(SubCommand::with_name("init")
-            .help("initialise the database")
+            .about("initialise the server for the first time")
             .arg(Arg::with_name("name")
                 .short("n")
                 .long("name")
@@ -47,7 +47,7 @@ fn make_clap<'a, 'b>() -> App<'a, 'b> {
                 .takes_value(true)
                 .required(true)))
         .subcommand(SubCommand::with_name("server")
-            .about("bring up the secrets server")
+            .about("bring up the secrets HTTPS server")
             .arg(Arg::with_name("listen")
                 .short("l")
                 .long("listen")
