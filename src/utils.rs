@@ -29,6 +29,7 @@ pub fn prompt_yn(prompt: &str) -> io::Result<bool> {
     // mixing stdout/stderr output is always a mess, but the only time we really
     // do it is with prompts. flush it here so our callers don't have to
     try!(stdout.flush());
+    try!(stderr.flush());
 
     loop {
         try!(stderr.write(prompt.as_bytes()));
