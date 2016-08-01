@@ -91,7 +91,7 @@ impl Service {
 
     pub fn printable_report(&self) -> String {
         return format!("=== {} ===\n\
-                       name:        {}
+                       name:        {}\n\
                        created:     {}\n\
                        modified:    {}\n\
                        creator:     {}\n\
