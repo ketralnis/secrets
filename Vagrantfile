@@ -18,6 +18,7 @@ Vagrant.configure(2) do |config|
     config.vm.network "private_network", ip: guest_ip
   end
 
+    config.vm.network "forwarded_port", host: 4430, guest: 4430
   config.vm.hostname = "secrets.vm"
 
   # project synced folder
