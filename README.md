@@ -17,10 +17,10 @@ See more in [DESIGN.md](DESIGN.md)
 
 # Example basic usage:
 
-* `secrets create my-bank`: create a new service (you'll be prompted for the new password for it)
+* `secrets create my-bank`: create a new service and set the new password for it
 * `secrets get my-bank`: get the secret
 * `secrets grant my-bank --grantee=federico`: give federico access to my-bank
-* `secrets rotate my-bank --withhold=federico`: take my-bank away from federico by setting a new one (you'll be prompted for the new value)
+* `secrets rotate my-bank --withhold=federico`: take my-bank away from federico by setting a new one (you'll have to change it with my-bank.com and you'll be prompted for the new value)
 * `secrets list --mine`: show what services you hold grants for
 
 # Quickstart (vagrant)
