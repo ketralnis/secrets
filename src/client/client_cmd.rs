@@ -43,8 +43,7 @@ fn make_clap<'a, 'b>() -> App<'a, 'b> {
             .default_value("prompt")
             .validator(password::validate_password_source))
         .subcommand(SubCommand::with_name("echo-password")
-            // a command for testing the password source system
-            .hidden(true)
+            .about("for testing the password source system")
             .arg(Arg::with_name("source")
                 .index(1)
                 .takes_value(true)
