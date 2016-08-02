@@ -179,9 +179,8 @@ pub trait SecretsContainer {
         return Ok((public_key, private_key));
     }
 
-    fn get_signs
-        (&self)
-         -> Result<(sign::PublicKey, sign::SecretKey), SecretsError> {
+    fn get_signs(&self)
+                 -> Result<(sign::PublicKey, sign::SecretKey), SecretsError> {
         let public_sign_vec: Vec<u8> = try!(self.get_global("public_sign"));
         let public_sign = sign::PublicKey::from_slice(&public_sign_vec);
         let public_sign = try!(public_sign.ok_or(keys::CryptoError::Unknown));
