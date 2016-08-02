@@ -10,13 +10,13 @@ extern crate hyper;
 extern crate openssl;
 extern crate regex;
 extern crate rfc1751;
-extern crate rpassword;
 extern crate rusqlite;
 extern crate rustc_serialize;
 extern crate serde;
 extern crate serde_json;
 extern crate sodiumoxide;
 extern crate tempfile;
+extern crate termion;
 extern crate url;
 
 mod common;
