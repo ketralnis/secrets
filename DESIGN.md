@@ -65,11 +65,11 @@ common name: secrets.vm
 fingerprint: b957e10c998faa9909cff3ba4ec35485d04708c3ecc7481fe14d7f07bc0229cd
 public key:  c15e697e4807793ef8a9461a7b2c6cf2266d1ec1480a594e83b54e7b75e07702
 public sign: f1db594eb55fe97657c57f2aa01afd1210a46d42d80d5552ac4d548162d4968e
-pneumonic:   AM ROBE KIT OMEN BATE ICY TROY RON WHAT HIP OMIT SUP LID CLAY AVER LEAR CAVE REEL CAN PAM FAN LUND RIFT ACME
+mnemonic:    AM ROBE KIT OMEN BATE ICY TROY RON WHAT HIP OMIT SUP LID CLAY AVER LEAR CAVE REEL CAN PAM FAN LUND RIFT ACME
 does that look right? [y/n]
 ```
 
-(`pneumonic` is a [rfc1751](https://tools.ietf.org/html/rfc1751) human-readable display of a SHA256 of the other values)
+(`mnemonic` is a [rfc1751](https://tools.ietf.org/html/rfc1751) human-readable display of a SHA256 of the other values)
 
 If they confirm, they are given a base64 summary of their own and the server's `PeerInfo` data and instructed to send it to the admin of the server (which must be transmitted using a side channel like email). This data is not encrypted or signed (we haven't established any mutually trusted keys yet). When the server is given this summary via `secrets-server accept-join`, the server double-checks that the server the client thought they connected to is in fact itself, prompts the server admin to double-check the client values using the same report format as above. If they confirm, the user has joined the server and can authenticate to it.
 

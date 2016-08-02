@@ -285,23 +285,23 @@ impl PeerInfo {
         let ref fingerprint_hex = self.fingerprint;;
         let public_key_hex = self.public_key.as_ref().to_hex();
         let public_sign_hex = self.public_sign.as_ref().to_hex();
-        let pneumonic = try!(self.pneumonic());
+        let mnemonic = try!(self.mnemonic());
 
         return Ok(format!("=== {} ===\n\
                           common name: {}\n\
                           fingerprint: {}\n\
                           public key:  {}\n\
                           public sign: {}\n\
-                          pneumonic:   {}",
+                          mnemonic:    {}",
                           self.cn,
                           self.cn,
                           fingerprint_hex,
                           public_key_hex,
                           public_sign_hex,
-                          pneumonic));
+                          mnemonic));
     }
 
-    fn pneumonic(&self) -> Result<String, SecretsError> {
+    fn mnemonic(&self) -> Result<String, SecretsError> {
         let fingerprint_bytes = try!(self.fingerprint.from_hex());
         let mut ret = Vec::new();
         ret.extend_from_slice(&self.cn.as_bytes());
