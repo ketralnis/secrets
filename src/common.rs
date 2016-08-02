@@ -11,6 +11,9 @@ use openssl::crypto::hash::Type as HashType;
 use openssl::crypto::pkey::PKey;
 use openssl::nid::Nid;
 use openssl::ssl::error::SslError;
+use openssl::ssl::SslContext;
+use openssl::ssl::SslMethod;
+use openssl::ssl::{SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
 use openssl::x509::extension::Extension::KeyUsage;
 use openssl::x509::extension::KeyUsageOption::DigitalSignature;
 use openssl::x509::X509;
@@ -127,6 +130,13 @@ fn create_common_schema(conn: &mut rusqlite::Connection)
              modified INT NOT NULL
         );"
     )
+}
+
+pub fn default_ssl_context() -> Result<SslContext, SecretsError> {
+    let mut ssl_context = try!(SslContext::new(SslMethod::Tlsv1));
+    ssl_context.set_options(SSL_OP_NO_SSLV2 | SSL_OP_NO_SSLV3 | SSL_OP_NO_COMPRESSION);
+    try!(ssl_context.set_cipher_list("ALL!EXPORT!EXPORT40!EXPORT56!aNULL!LOW!RC4@STRENGTH"));
+    return Ok(ssl_context);
 }
 
 pub trait SecretsContainer {

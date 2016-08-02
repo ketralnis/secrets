@@ -13,11 +13,8 @@ use hyper::status::StatusCode;
 use hyper::uri::RequestUri;
 use openssl::crypto::hash::Type as HashType;
 use openssl::nid::Nid;
-use openssl::ssl::SslContext;
-use openssl::ssl::SslMethod;
+use openssl::ssl::SSL_VERIFY_PEER;
 use openssl::ssl::SslStream;
-use openssl::ssl::{SSL_VERIFY_PEER, SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3,
-                   SSL_OP_NO_COMPRESSION};
 use openssl::x509::X509StoreContext;
 use rustc_serialize::hex::ToHex;
 use serde_json::de::from_reader as dejson_from_reader;
@@ -27,6 +24,7 @@ use url::form_urlencoded::parse as parse_qs;
 use api::{User, Grant, ApiResponse, ServiceCreateRequest, GrantRequest};
 use common::SecretsContainer;
 use common::SecretsError;
+use common::default_ssl_context;
 use server::server::SecretsServer;
 
 struct ServerHandler {
@@ -59,8 +57,8 @@ impl ServerHandler {
         let auth_user = try!(authenticate_request(&instance, &request));
 
         if url_matches(&request, Method::Get, "/api/auth") {
-            // this URL only checks that the client can authenticate. they don't
-            // really care about the result
+            // this URL only checks that the client can authenticate. they
+            // don't really care about the result
             api.users.insert(auth_user.username.clone(), auth_user.clone());
             return Ok((StatusCode::Ok, api));
         }
@@ -345,10 +343,8 @@ fn pretend_verify(_preverify_ok: bool, _ctx: &X509StoreContext) -> bool {
 }
 
 fn make_ssl(instance: &mut SecretsServer) -> Result<Openssl, SecretsError> {
-    let mut ssl_context = try!(SslContext::new(SslMethod::Tlsv1));
+    let mut ssl_context = try!(default_ssl_context());
     ssl_context.set_verify(SSL_VERIFY_PEER, Some(pretend_verify));
-    ssl_context.set_options(SSL_OP_NO_SSLV2 | SSL_OP_NO_SSLV3 | SSL_OP_NO_COMPRESSION);
-    try!(ssl_context.set_cipher_list("ALL!EXPORT!EXPORT40!EXPORT56!aNULL!LOW!RC4@STRENGTH"));
     let (public_pem, private_pem) = try!(instance.get_pems());
     try!(ssl_context.set_certificate(&public_pem));
     try!(ssl_context.set_private_key(&private_pem));

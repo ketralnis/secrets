@@ -13,10 +13,7 @@ use hyper::Url;
 use hyper;
 use openssl::crypto::hash::Type as HashType;
 use openssl::nid::Nid;
-use openssl::ssl::SslContext;
-use openssl::ssl::SslMethod;
-use openssl::ssl::{SSL_VERIFY_NONE, SSL_VERIFY_PEER, SSL_OP_NO_SSLV2,
-                   SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
+use openssl::ssl::{SSL_VERIFY_NONE, SSL_VERIFY_PEER};
 use openssl::x509::X509StoreContext;
 use rusqlite;
 use rustc_serialize::hex::ToHex;
@@ -32,6 +29,7 @@ use api::{ApiResponse, PeerInfo, JoinRequest, Service, Grant,
 use common;
 use common::SecretsContainer;
 use common::SecretsError;
+use common::default_ssl_context;
 use keys;
 use utils;
 
@@ -59,12 +57,8 @@ impl SecretsClient {
         // us. So if they give us a fake fingerprint, when we ask the user they
         // will reject it. If they lie about controlling this fingerprint, then
         // any future connections to them will fail anyway.
-        let mut ssl_context = try!(SslContext::new(SslMethod::Tlsv1));
+        let mut ssl_context = try!(default_ssl_context());
         ssl_context.set_verify(SSL_VERIFY_NONE, None);
-        ssl_context.set_options(SSL_OP_NO_SSLV2 | SSL_OP_NO_SSLV3 |
-                                SSL_OP_NO_COMPRESSION);
-        try!(ssl_context.set_cipher_list(
-            "ALL!EXPORT!EXPORT40!EXPORT56!aNULL!LOW!RC4@STRENGTH"));
         let ssl = Openssl { context: Arc::new(ssl_context) };
         let connector = HttpsConnector::new(ssl);
         let http = hyper::Client::with_connector(connector);
@@ -182,11 +176,7 @@ impl SecretsClient {
                       -> Result<ApiResponse, SecretsError> {
         // set up the SSL verifier to check the fingerprint
         let (public_pem, private_pem) = try!(self.get_pems());
-        let mut ssl_context = try!(SslContext::new(SslMethod::Tlsv1));
-        ssl_context.set_options(SSL_OP_NO_SSLV2 | SSL_OP_NO_SSLV3 |
-                                SSL_OP_NO_COMPRESSION);
-        try!(ssl_context.set_cipher_list(
-            "ALL!EXPORT!EXPORT40!EXPORT56!aNULL!LOW!RC4@STRENGTH"));
+        let mut ssl_context = try!(default_ssl_context());
         try!(ssl_context.set_certificate(&public_pem));
         try!(ssl_context.set_private_key(&private_pem));
         try!(ssl_context.check_private_key());
