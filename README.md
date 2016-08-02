@@ -9,6 +9,14 @@ Secrets is a system for safely storing and sharing passwords amongst a team
 
 See more in [DESIGN.md](DESIGN.md)
 
+# A note on development state:
+
+If your threat model doesn't include a compromised or malicious server, Secrets does what it says on the tin and is probably ready to use (barring what's probably a host of missing features that you may want. Feedback and especailly patches are welcome!).
+
+Withstanding a malicious server is an explicit goal, but secrets is currently missing some planned features to make that possible. In particular, an attacker with ongoing read/write access to the server's database file could insert their own public key in place of an existing users' and then wait around for you to encrypt something to their key. Since the server never sees plaintext, read-only access to the database shouldn't itself compromise the content of any secret data.
+
+See [TODO.md](TODO.md)
+
 # Dependencies
 
 * [libsodium](https://download.libsodium.org/doc/installation/)
