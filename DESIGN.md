@@ -44,11 +44,11 @@ common name: secrets.vm
 fingerprint: b957e10c998faa9909cff3ba4ec35485d04708c3ecc7481fe14d7f07bc0229cd
 public key:  c15e697e4807793ef8a9461a7b2c6cf2266d1ec1480a594e83b54e7b75e07702
 public sign: f1db594eb55fe97657c57f2aa01afd1210a46d42d80d5552ac4d548162d4968e
-mnemonic:    AM ROBE KIT OMEN BATE ICY TROY RON WHAT HIP OMIT SUP LID CLAY AVER LEAR CAVE REEL CAN PAM FAN LUND RIFT ACME
+mnemonic:    ANTE DIET ROIL EBEN NEAT NAME SILK SLEW IBIS AGEE LEW KANT AWE HAT DANE BOB PHI OK NAG CRY BUB A A ABE
 does that look right? [y/n]
 ```
 
-(`mnemonic` is a [rfc1751](https://tools.ietf.org/html/rfc1751) human-readable display of the SHA256 of the other values)
+(`mnemonic` is a [rfc1751](https://tools.ietf.org/html/rfc1751) human-readable display of the SHA224 of the other values)
 
 # Grants
 
