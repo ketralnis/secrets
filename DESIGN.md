@@ -1,6 +1,6 @@
 This tries to describe secrets' use of cryptography in a way that makes auditing easier.
 
-All crypto is done with either [libsodium](https://download.libsodium.org/doc/) via the Rust binding [sodiumoxide](https://github.com/dnaq/sodiumoxide) (the vast majority) or [openssl](https://www.openssl.org/) (which is used for HTTPS authentication between the client and server).
+All crypto is done with either [libsodium](https://download.libsodium.org/doc/) via the Rust binding [sodiumoxide](https://github.com/dnaq/sodiumoxide) (the vast majority) or [openssl](https://www.openssl.org/) via the Rust binding [rust-openssl](https://github.com/sfackler/rust-openssl) (which is used for HTTPS authentication between the client and server).
 
 # Overarching design goals:
 
@@ -36,28 +36,7 @@ In addition, the server and every client store these private data:
 
 These private data are encrypted locally to the server or client. They are encrypted using libsodium [secretbox](https://download.libsodium.org/libsodium/content/secret-key_cryptography/authenticated_encryption.html) using the `crypto_secretbox_xsalsa20poly1305` cipher suite and a different random nonce per value. The key is generated from the store password (the argument to `-p`) using libsodium [pwhash](https://download.libsodium.org/libsodium/content/password_hashing/) with the `crypto_pwhash_scryptsalsa208sha256` cipher suite and a different random salt per value.
 
-# Grants
-
-This is the storage of the actual secret values. A Grant has
-
-* `grantee`: who holds it, and to whos private key will decrypt it
-* `grantor`: who granted it to `grantee`, and whose public key encrypted it
-* `service_name`: the service it represent
-* `created`: the creation timestamp
-* `ciphertext`: the encrypted data
-* `signature`: a signature using the grantor's `public_sign` that includes all of the above values. (This is included because the encryption ciphersuite doesn't provide non-repudiation so we provide it separately)
-
-When creating a service, adding a grant to a user, or rotating a service, the target's `PeerInfo` is fetched and their public key is used to encrypt the Grant to them.
-
-# Client<->server communication
-
-HTTPS is used between the client and server using openssl. Authentication is done using client certificates. To determine if a connected client should be authenticated, the server checks the client certificate's CN and SHA256 fingerprint against the user in the database
-
-* Client<->server authentication (joining)
-
-To make joining a server safe, secrets tries to make it safe by involving human checking of fingerprints on both the client and the server
-
-In order for a client to authenticate to the server, the client must first join the server. `secrets join` makes the client create its `PeerInfo` data in its local database, connects, and show the user the server it connected to in a report that looks like this:
+When shown to a user, a `PeerInfo` report looks like this:
 
 ```
 === secrets.vm ===
@@ -69,9 +48,37 @@ mnemonic:    AM ROBE KIT OMEN BATE ICY TROY RON WHAT HIP OMIT SUP LID CLAY AVER 
 does that look right? [y/n]
 ```
 
-(`mnemonic` is a [rfc1751](https://tools.ietf.org/html/rfc1751) human-readable display of a SHA256 of the other values)
+(`mnemonic` is a [rfc1751](https://tools.ietf.org/html/rfc1751) human-readable display of the SHA256 of the other values)
 
-If they confirm, they are given a base64 summary of their own and the server's `PeerInfo` data and instructed to send it to the admin of the server (which must be transmitted using a side channel like email). This data is not encrypted or signed (we haven't established any mutually trusted keys yet). When the server is given this summary via `secrets-server accept-join`, the server double-checks that the server the client thought they connected to is in fact itself, prompts the server admin to double-check the client values using the same report format as above. If they confirm, the user has joined the server and can authenticate to it.
+# Grants
+
+This is the storage of the actual secret values. A Grant has
+
+* `grantee`: who holds it, and to whose private key will decrypt it
+* `grantor`: who granted it to `grantee`, and whose private key encrypted it
+* `service_name`: the service it represent
+* `created`: the creation timestamp
+* `ciphertext`: the encrypted data, encrypted using `grantors`'s private key to `grantee`'s public key
+* `signature`: a signature verifiable with the `grantor`'s `public_sign` that includes all of the above values. (This is included because the `box`'s encryption ciphersuite doesn't provide non-repudiation so we provide it separately.)
+
+When creating a service, adding a grant to a user, or rotating a service, the target's `PeerInfo` is fetched and their public key is used to encrypt the Grant to them.
+
+# Client<->server communication
+
+HTTPS is used between the client and server using openssl. Authentication is done in both directions using pinned SSL certificates.
+
+## Initial client<->server authentication (joining)
+
+secrets involves human checking of fingerprints to authenticate both a client and the server to each other.
+
+In order for a client to authenticate to the server, the client must first "join" the server. `secrets join` makes the client initialise its keys in its local database, connects to the server, and shows the user the server it connected to in a `PeerInfoi` report. If they confirm, they are given a base64 summary of their own and the server's `PeerInfo` data (a `JoinRequest` blob) and instructed to send it to the admin of the server which must be transmitted using a side channel like email. This data is not encrypted or signed. (It contains only fully public data, and we haven't established any mutually trusted keys yet anyway.) When the server is given this summary via `secrets-server accept-join`, the server double-checks that the server is in fact the server that the client thought they connected to, prompts the server admin to double-check the client values using the same report format (which should be double-checked via a side channel). If the server admin confirms, the user has joined the server and can now authenticate to it.
+
+## key-pinning
+
+* The client refuses to connect to a server whose SSL certificate does not match the CN and fingerprint from when it joined.
+* The server refuses to allow connections to URLs requiring authentication (more or less everything except the URL to fetch the server's PeerInfo) to clients whose CA and fingerprint don't match a client that has joined.
+
+Certificate signing is not used. All certificates are self-signed and a CA is not used or required.
 
 # Glossary
 
