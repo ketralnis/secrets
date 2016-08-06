@@ -9,8 +9,9 @@ use std::os::unix::io::FromRawFd;
 use std::process::Command;
 use std::string;
 
-use rpassword;
 use tempfile;
+
+use getpass;
 
 pub enum PasswordSource {
     Password(String),
@@ -29,6 +30,7 @@ quick_error! {
         Io(err: io::Error) {from()}
         Utf8(err: string::FromUtf8Error) {from()}
         Editor(what: String) {}
+        Getpass(err: getpass::GetpassError) {from()}
     }
 }
 
@@ -96,14 +98,14 @@ pub fn evaluate_password_source(source: PasswordSource)
             Ok(s)
         }
         PasswordSource::Prompt => {
-            try!(io::stderr().write(b"password:"));
-            let val = try!(rpassword::read_password());
-            Ok(val)
+            let val = try!(getpass::get_pass("password: "));
+            let password = try!(String::from_utf8(val));
+            Ok(password)
         }
         PasswordSource::Edit(editor) => {
             let val = try!(edit(editor, &b""[..]));
             let password = try!(String::from_utf8(val));
-            return Ok(password);
+            Ok(password)
         }
     }
 }

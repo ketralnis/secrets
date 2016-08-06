@@ -1,7 +1,6 @@
 use std::env;
-use std::io;
 use std::io::Write;
-use std::os::unix::ffi::OsStrExt;
+use std::io;
 use std::path::PathBuf;
 use std::process::exit;
 

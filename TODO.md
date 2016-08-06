@@ -18,7 +18,6 @@ These are things that we really shouldn't go to 1.0 without
 
 # Bugs (some blockers, some not)
 
-* Fix prompt to work like [python's](https://svn.python.org/projects/python/tags/r32/Lib/getpass.py) or ssh's (maybe try [termion](https://github.com/ticki/termion/blob/master/src/input.rs))
 * implement --yes to autoconfirm all prompts (mostly for regression testing)
 * make all prompts open the terminal directly so we don't interfere with stdin
 * move all interactivity out of client/server into to *_cmd.rs to enable GUI clients to use the same code

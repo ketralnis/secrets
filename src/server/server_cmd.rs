@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::hash::Hash;
 use std::io::Read;
-use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::process::exit;
 
@@ -23,7 +22,6 @@ use utils;
 
 fn make_clap<'a, 'b>() -> App<'a, 'b> {
     App::new("secrets-server")
-        .setting(AppSettings::SubcommandRequiredElseHelp)
         .arg(Arg::with_name("db")
             .short("d")
             .long("db")
@@ -38,8 +36,9 @@ fn make_clap<'a, 'b>() -> App<'a, 'b> {
              .takes_value(true)
              .default_value("pass:") // empty password
              .validator(password::validate_password_source))
+        .setting(AppSettings::SubcommandRequiredElseHelp)
         .subcommand(SubCommand::with_name("init")
-            .about("initialise the server for the first time")
+            .help("initialise the database")
             .arg(Arg::with_name("name")
                 .short("n")
                 .long("name")
@@ -47,7 +46,7 @@ fn make_clap<'a, 'b>() -> App<'a, 'b> {
                 .takes_value(true)
                 .required(true)))
         .subcommand(SubCommand::with_name("server")
-            .about("bring up the secrets HTTPS server")
+            .about("bring up the secrets server")
             .arg(Arg::with_name("listen")
                 .short("l")
                 .long("listen")
@@ -135,7 +134,7 @@ pub fn main() {
                 server::FireResult::Success => {
                     info!("disabled {}", firee);
                 }
-                server::FireResult::OutstandingGrants { grants } => {
+                server::FireResult::OutstandingGrants {grants} => {
                     print_plan_firing(&instance, &firee, grants).unwrap();
 
                     if force {
@@ -159,8 +158,7 @@ pub fn main() {
 
 fn print_plan_firing(instance: &server::SecretsServer,
                      firee: &String,
-                     grants: Vec<Grant>)
-                     -> Result<(), SecretsError> {
+                     grants: Vec<Grant>) -> Result<(), SecretsError> {
     let user = try!(instance.get_user(firee));
 
     if user.disabled.is_some() {
@@ -173,12 +171,11 @@ fn print_plan_firing(instance: &server::SecretsServer,
 
     let mut service_knowers = HashMap::new();
     for grant in grants {
-        let other_knowers =
-            try!(instance.get_grants_for_service(&grant.service_name))
-                .iter()
-                .filter(|g| g.grantee != (*firee))
-                .map(|g| g.grantee.clone())
-                .collect();
+        let other_knowers = try!(instance.get_grants_for_service(&grant.service_name))
+            .iter()
+            .filter(|g| g.grantee != (*firee))
+            .map(|g| g.grantee.clone())
+            .collect();
         service_knowers.insert(grant.service_name, other_knowers);
     }
 
@@ -213,9 +210,9 @@ fn print_plan_firing(instance: &server::SecretsServer,
 /// to rotate every service
 fn plan_firing<'a, S, U>(known_by: &'a HashMap<S, Vec<U>>)
                          -> HashMap<Option<&'a U>, Vec<&'a S>>
-    where S: Hash + Ord,
-          U: Hash + Eq
-{
+                         where S: Hash + Ord,
+                               U: Hash + Eq,
+                         {
     // uses a naive greedy set covering algorithm
 
     let mut ret: HashMap<Option<&U>, Vec<&S>> = HashMap::new();
@@ -236,11 +233,12 @@ fn plan_firing<'a, S, U>(known_by: &'a HashMap<S, Vec<U>>)
         if let Some(service_knowers) = known_by.get(next_service) {
             // for this service, find the person that knows the most things in
             // general
-            let best_knower = service_knowers.iter()
-                .max_by_key(|user| match knowers.get(user) {
-                    Some(x) => x.len(),
-                    None => 0,
-                });
+            let best_knower = service_knowers.iter().max_by_key(|user|
+                    match knowers.get(user) {
+                        Some(x) => x.len(),
+                        None => 0
+                    }
+            );
 
             if let Some(best) = best_knower {
                 let vec = ret.entry(Some(best)).or_insert_with(|| vec![]);
@@ -284,36 +282,35 @@ mod tests {
 
         let mut optimal_plan = HashMap::new();
         optimal_plan.insert(None, vec!["hn"]);
-        optimal_plan.insert(Some("david"),
-                            vec!["dogpile", "google", "twitter", "reddit"]);
+        optimal_plan.insert(Some("david"), vec!["dogpile", "google", "twitter", "reddit"]);
         optimal_plan.insert(Some("florence"), vec!["yahoo"]);
         optimal_plan.insert(Some("frank"), vec!["digg"]);
 
         let firing_plan = plan_firing(&map);
-        let mut firing_plan_human: Vec<(Option<String>, Vec<String>)> =
-            firing_plan.iter()
-                .map(|(k, v)| {
-                    let k = k.map(|k_| (*k_).to_string());
-                    let mut v: Vec<String> = v.iter()
-                        .map(|v_| (*v_).to_string())
-                        .collect();
-                    v.sort();
-                    (k, v)
-                })
-                .collect();
+        let mut firing_plan_human: Vec<(Option<String>, Vec<String>)> = firing_plan
+            .iter()
+            .map(|(k, v)| {
+                let k = k.map(|k_| (*k_).to_string());
+                let mut v: Vec<String> = v.iter()
+                    .map(|v_| (*v_).to_string())
+                    .collect();
+                v.sort();
+                (k, v)
+            })
+            .collect();
         firing_plan_human.sort();
 
-        let mut optimal_plan_human: Vec<(Option<String>, Vec<String>)> =
-            optimal_plan.iter()
-                .map(|(k, v)| {
-                    let k = k.map(|k_| k_.to_string());
-                    let mut v: Vec<String> = v.iter()
-                        .map(|v_| v_.to_string())
-                        .collect();
-                    v.sort();
-                    (k, v)
-                })
-                .collect();
+        let mut optimal_plan_human: Vec<(Option<String>, Vec<String>)> = optimal_plan
+            .iter()
+            .map(|(k, v)| {
+                let k = k.map(|k_| k_.to_string());
+                let mut v: Vec<String> = v.iter()
+                    .map(|v_| v_.to_string())
+                    .collect();
+                v.sort();
+                (k, v)
+            })
+            .collect();
         optimal_plan_human.sort();
 
         assert_eq!(firing_plan_human, optimal_plan_human);

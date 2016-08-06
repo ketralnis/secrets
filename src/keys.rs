@@ -1,5 +1,5 @@
+use std::io::Read;
 use std::io;
-use std::io::{Read, Write};
 
 use byteorder::{NetworkEndian, WriteBytesExt, ReadBytesExt};
 use sodiumoxide::crypto::auth;
