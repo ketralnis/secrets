@@ -196,7 +196,7 @@ pub fn main() {
     if let ("echo-password", Some(subargs)) = matches.subcommand() {
         let pwsd = subargs.value_of("source").unwrap().to_string();
         let pws = password::parse_password_source(&pwsd).unwrap();
-        let pw = password::evaluate_password_source(pws).unwrap();
+        let pw = password::evaluate_password_source(pws, "to echo").unwrap();
         println!("{}", pw);
         exit(0);
     }
@@ -230,7 +230,7 @@ pub fn main() {
     // every command needs a valid password to proceed
     let pwsd = matches.value_of("password").unwrap().to_string();
     let pws = password::parse_password_source(&pwsd).unwrap();
-    let pw = password::evaluate_password_source(pws).unwrap();
+    let pw = password::evaluate_password_source(pws, "store password").unwrap();
 
     if let ("join", Some(subargs)) = matches.subcommand() {
         let username = subargs.value_of("username").unwrap().to_string();
@@ -278,7 +278,7 @@ pub fn main() {
             let secret_source = password::parse_password_source(secret_source)
                 .unwrap();
             let secret_value =
-                password::evaluate_password_source(secret_source).unwrap();
+                password::evaluate_password_source(secret_source, "secret data").unwrap();
             let secret_value = secret_value.as_bytes().to_owned();
             instance.create_service(service_name.to_owned(),
                                     secret_value,
@@ -347,9 +347,9 @@ pub fn main() {
             instance.add_grants(service_name, grantees).unwrap();
         }
         ("rotate", Some(subargs)) => {
-            // we can rotate multiple services at once, as long as we hold a
-            // grant to all of them and they can all share the same rotation
-            // strategy and source type
+            // we can theoretically rotate multiple services at once, as long as
+            // we hold a grant to all of them and they can all share the same
+            // rotation strategy and value
             let service_names: Vec<String> = subargs.values_of("service_name")
                 .unwrap()
                 .map(|s| s.to_owned())
@@ -369,17 +369,18 @@ pub fn main() {
                     unreachable!()
                 };
 
-            for service_name in service_names {
-                let secret_source = subargs.value_of("source").unwrap();
-                let secret_source =
-                    password::parse_password_source(secret_source).unwrap();
-                let secret_value =
-                    password::evaluate_password_source(secret_source).unwrap();
-                let secret_value = secret_value.as_bytes().to_owned();
+            let secret_source = subargs.value_of("source").unwrap();
+            let secret_source =
+                password::parse_password_source(secret_source).unwrap();
+            let secret_value =
+                password::evaluate_password_source(secret_source,
+                                                   "secret value").unwrap();
+            let secret_value = secret_value.as_bytes().to_owned();
 
+            for service_name in service_names {
                 instance.rotate_service(&service_name,
-                                    &rotation_stategy,
-                                    secret_value)
+                                        &rotation_stategy,
+                                        secret_value.clone())
                     .unwrap();
             }
         }

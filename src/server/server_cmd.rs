@@ -85,7 +85,7 @@ pub fn main() {
 
     let pwsd = matches.value_of("password").unwrap();
     let pws = password::parse_password_source(&pwsd).unwrap();
-    let pw = password::evaluate_password_source(pws).unwrap();
+    let pw = password::evaluate_password_source(pws, "store password").unwrap();
 
     let config_exists = config_file.is_file();
 

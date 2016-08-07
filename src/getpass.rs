@@ -10,12 +10,14 @@ extern "C" {
 pub fn get_pass(prompt: &'static str) -> Vec<u8> {
     // panics on prompts that contain null bytes, but since they are 'static
     // that would be due to a bug
-    let prompt = CString::new(prompt).unwrap();
+    let mut prompt = prompt.as_bytes().to_vec();
+    prompt.extend_from_slice(&(b": ")[..]);
+    let cprompt = CString::new(prompt).unwrap();
 
     let mut ret: Vec<u8> = Vec::new();
 
     unsafe {
-        let pass = getpass(prompt.as_ptr());
+        let pass = getpass(cprompt.as_ptr());
         let bytes = CStr::from_ptr(pass).to_bytes();
 
         // getpass(1) uses a static buffer, so copy the entered password out

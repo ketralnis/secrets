@@ -70,7 +70,7 @@ pub fn parse_password_source(source: &str) -> Result<PasswordSource, String> {
     }
 }
 
-pub fn evaluate_password_source(source: PasswordSource)
+pub fn evaluate_password_source(source: PasswordSource, prompt: &'static str)
                                 -> Result<String, PasswordError> {
     match source {
         PasswordSource::Password(x) => Ok(x),
@@ -97,7 +97,7 @@ pub fn evaluate_password_source(source: PasswordSource)
             Ok(s)
         }
         PasswordSource::Prompt => {
-            let val = getpass::get_pass("password: ");
+            let val = getpass::get_pass(prompt);
             let password = try!(String::from_utf8(val));
             Ok(password)
         }
