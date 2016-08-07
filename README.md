@@ -9,7 +9,7 @@ Secrets is a system for safely storing and sharing passwords amongst a team
 
 See more in [DESIGN.md](DESIGN.md)
 
-# A note on development state:
+# A note on development state
 
 Secrets is early in development and is changing a lot while features are being added and removed.
 
@@ -25,7 +25,7 @@ See [TODO.md](TODO.md)
 * [openssl](https://www.openssl.org/)
 * [sqlite](https://www.sqlite.org/)
 
-# Example basic usage:
+# Example basic usage
 
 * `secrets create my-bank`: create a new service and set the new password for it
 * `secrets get my-bank`: get the secret
@@ -41,7 +41,7 @@ The best way to try it out without committing to anything
 * `git clone https://github.com/ketralnis/secrets && cd secrets`
 * `vagrant up`
 * `vagrant ssh`
-* `secrets get sooper-sekrit` (the default password is `password`)
+* `secrets get sooper-sekrit` (the default store password is `password`)
 
 # Quickstart (development)
 

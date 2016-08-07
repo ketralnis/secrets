@@ -2,7 +2,7 @@ This tries to describe secrets' use of cryptography in a way that makes auditing
 
 All crypto is done with either [libsodium](https://download.libsodium.org/doc/) via the Rust binding [sodiumoxide](https://github.com/dnaq/sodiumoxide) (the vast majority) or [openssl](https://www.openssl.org/) via the Rust binding [rust-openssl](https://github.com/sfackler/rust-openssl) (which is used for HTTPS authentication between the client and server).
 
-# Overarching design goals:
+# Overarching design goals
 
 * Sharing secret data with a small-to-medium team should be easy and secure.
 * The server should never see plaintext. Plaintext should never leave the client and the server shouldn't be able to decrypt anything
@@ -17,7 +17,7 @@ The server is a store of users' public keys and opaque encrypted blobs. Secret d
 
 Creating or rotating a service involves fetching each grantee's public keys, encrypting the secret to them, and uploading to the server only that encrypted data. Similarly, granting access to an existing service involves an existing grantee of that service.
 
-Once a user has seen the password to an external service, they can't "unknow" it. So there is no way to simply remove a grant: you must rotate the password (actually change the password on the external service, and update the grants) while withholding the new value from that user. For this reason, disabling a user (`secrets-server fire`) won't succeed until the given user holds no grants which can only be achieved by rotating every password they know.
+Once a user has seen the password to an external service, they can't unknow it. So there is no way to simply remove a grant: you must rotate the password (change the password on the external service, and update the grants) while withholding the new value from that user. For this reason, disabling a user (`secrets-server fire`) won't succeed until the given user holds no grants which can only be achieved by rotating every password they know.
 
 # `PeerInfo`
 
@@ -90,3 +90,4 @@ Certificate signing is not used. All certificates are self-signed and a CA is no
 * Server: an instance of `secrets-server` running somewhere
 * Client: an instance of `secrets` with an associated user
 * Rotation: changing the secret value by e.g. changing the password on the external service and updating secrets with the new value. This can add or remove grantees in the process
+* Store password: the password used to encrypt private keys local to a client or server. This password is only used locally, it is not used for network communication or authentication
