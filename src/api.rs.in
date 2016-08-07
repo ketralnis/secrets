@@ -120,7 +120,7 @@ impl Grant {
     pub fn create(grantee: String,
                   grantor: String,
                   service_name: String,
-                  plaintext: &Vec<u8>,
+                  plaintext: &[u8],
                   created: i64,
                   from_key: &box_::SecretKey,
                   to_key: &box_::PublicKey,
@@ -160,9 +160,9 @@ impl Grant {
         Ok(u)
     }
 
-    fn signable(grantee: &String,
-                grantor: &String,
-                service_name: &String,
+    fn signable(grantee: &str,
+                grantor: &str,
+                service_name: &str,
                 ciphertext: &[u8],
                 created: i64)
                 -> Vec<u8> {
@@ -282,7 +282,7 @@ pub struct PeerInfo {
 
 impl PeerInfo {
     pub fn printable_report(&self) -> Result<String, SecretsError> {
-        let ref fingerprint_hex = self.fingerprint;;
+        let fingerprint_hex = &self.fingerprint;
         let public_key_hex = self.public_key.as_ref().to_hex();
         let public_sign_hex = self.public_sign.as_ref().to_hex();
         let mnemonic = try!(self.mnemonic());

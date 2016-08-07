@@ -34,12 +34,12 @@ quick_error! {
 }
 
 pub fn validate_password_source(source: String) -> Result<(), String> {
-    return parse_password_source(&source).map(|_| ());
+    parse_password_source(&source).map(|_| ())
 }
 
 pub fn parse_password_source(source: &str) -> Result<PasswordSource, String> {
     let rest = || {
-        let v: Vec<&str> = source.splitn(2, ":").collect();
+        let v: Vec<&str> = source.splitn(2, ':').collect();
         if v.len() == 2 {
             v[1].to_string()
         } else {

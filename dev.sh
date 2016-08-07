@@ -1,5 +1,10 @@
 #!/bin/sh
 
+if ! which fswatch > /dev/null; then
+    echo fswatch not available &>2
+    exit 1
+fi
+
 while true; do
     clear
     echo $(date) $CHANGED

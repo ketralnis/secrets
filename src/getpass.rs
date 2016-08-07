@@ -7,6 +7,7 @@ extern "C" {
   fn bzero(ptr: *mut libc::c_void, len: libc::size_t) -> libc::c_void;
 }
 
+/// Use `libc`'s `getpass`
 pub fn get_pass(prompt: &'static str) -> Vec<u8> {
     // panics on prompts that contain null bytes, but since they are 'static
     // that would be due to a bug
@@ -27,5 +28,5 @@ pub fn get_pass(prompt: &'static str) -> Vec<u8> {
         bzero(pass as *mut libc::c_void, bytes.len());
     };
 
-    return ret;
+    ret
 }

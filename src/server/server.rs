@@ -43,7 +43,7 @@ impl SecretsServer {
             db: db,
             password: password,
         };
-        return Ok(instance);
+        Ok(instance)
     }
 
     // called interactively
@@ -70,7 +70,7 @@ impl SecretsServer {
                                          jr.client_info.public_key,
                                          jr.client_info.public_sign));
         info!("created user: {}", user.username);
-        return Ok(user);
+        Ok(user)
     }
 
     fn create_user(&self,
@@ -92,10 +92,10 @@ impl SecretsServer {
               &public_sign.as_ref(),
               &now]));
         let user = try!(self.get_user(&username));
-        return Ok(user);
+        Ok(user)
     }
 
-    pub fn fire_user(&self, username: &String, force: bool) -> Result<FireResult, SecretsError> {
+    pub fn fire_user(&self, username: &str, force: bool) -> Result<FireResult, SecretsError> {
         let now = UTC::now().timestamp();
         let user = try!(self.get_user(username));
         let granted_services = try!(self.get_grants_for_grantee(username));
@@ -103,7 +103,7 @@ impl SecretsServer {
         // by design, any passwords that the user might know should be returned
         // by this. this is why we enforce that new services and rotations must
         // always include the person setting the new secret
-        if !force && granted_services.len() > 0 {
+        if !force && !granted_services.is_empty() {
             return Ok(FireResult::OutstandingGrants{grants: granted_services});
         }
 
@@ -111,25 +111,25 @@ impl SecretsServer {
             // if they weren't already disabled, mark the time.
             try!(self.db.execute(
                 "UPDATE users SET disabled=? WHERE username=?",
-                &[&now, username]));
+                &[&now, &username]));
         }
 
-        return Ok(FireResult::Success);
+        Ok(FireResult::Success)
     }
 
-    pub fn get_user(&self, username: &String) -> Result<User, SecretsError> {
+    pub fn get_user(&self, username: &str) -> Result<User, SecretsError> {
         let user = try!(self.db.query_row_and_then(
             "SELECT username, public_key, public_sign, ssl_fingerprint,
                     created, disabled
              FROM users
              WHERE username=?
             ",
-            &[username],
+            &[&username],
             User::from_row));
-        return Ok(user);
+        Ok(user)
     }
 
-    fn user_exists(&self, username: &String) -> Result<bool, SecretsError> {
+    fn user_exists(&self, username: &str) -> Result<bool, SecretsError> {
         match self.get_user(username) {
             Ok(_) => Ok(true),
             Err(SecretsError::Sqlite(rusqlite::Error::QueryReturnedNoRows)) => {
@@ -140,8 +140,8 @@ impl SecretsServer {
     }
 
     pub fn authenticate(&self,
-                        username: &String,
-                        ssl_fingerprint: &String)
+                        username: &str,
+                        ssl_fingerprint: &str)
                         -> Result<User, SecretsError> {
         let user = match self.get_user(username) {
             Ok(user) => user,
@@ -150,27 +150,27 @@ impl SecretsServer {
             }
             Err(x) => return Err(x),
         };
-        if !utils::constant_time_compare(&user.ssl_fingerprint.as_bytes(),
-                                         &ssl_fingerprint.as_bytes()) {
+        if !utils::constant_time_compare(user.ssl_fingerprint.as_bytes(),
+                                         ssl_fingerprint.as_bytes()) {
             return Err(SecretsError::Authentication("bad fingerprint match"));
         }
         if user.disabled.is_some() {
             return Err(SecretsError::Authentication("user is disabled"));
         }
-        return Ok(user);
+        Ok(user)
     }
 
     pub fn get_service(&self,
-                       service_name: &String)
+                       service_name: &str)
                        -> Result<Service, SecretsError> {
         let service = try!(self.db.query_row_and_then(
                 "SELECT service_name, created, modified, creator, modified_by
                  FROM services
                  WHERE service_name=?
                  ",
-                &[service_name],
+                &[&service_name],
                 |r| Service::from_row(&r)));
-        return Ok(service);
+        Ok(service)
     }
 
     pub fn all_services(&self) -> Result<Vec<Service>, SecretsError> {
@@ -184,11 +184,11 @@ impl SecretsServer {
             let service = try!(maybe_service);
             ret.push(service)
         }
-        return Ok(ret);
+        Ok(ret)
     }
 
     pub fn service_exists(&self,
-                          service_name: &String)
+                          service_name: &str)
                           -> Result<bool, SecretsError> {
         match self.get_service(service_name) {
             Ok(_) => Ok(true),
@@ -318,11 +318,11 @@ impl SecretsServer {
              WHERE service_name=?
             ",
             &[&auth_user.username, &now, &service.name]));
-        return Ok(());
+        Ok(())
     }
 
     pub fn get_grants_for_service(&self,
-                                  service_name: &String)
+                                  service_name: &str)
                                   -> Result<Vec<Grant>, SecretsError> {
         let mut ret = vec![];
         let _: Service = try!(self.get_service(service_name));
@@ -332,7 +332,7 @@ impl SecretsServer {
              FROM grants
              WHERE service_name = ?
             "));
-        let grants = try!(stmt.query_and_then(&[service_name],
+        let grants = try!(stmt.query_and_then(&[&service_name],
                                               |r| Grant::from_row(r)));
         for maybe_grant in grants {
             let grant = try!(maybe_grant);
@@ -343,11 +343,11 @@ impl SecretsServer {
             ret.push(grant);
         }
 
-        return Ok(ret);
+        Ok(ret)
     }
 
     pub fn get_grants_for_grantee(&self,
-                                  grantee_name: &String)
+                                  grantee_name: &str)
                                   -> Result<Vec<Grant>, SecretsError> {
         let mut ret = vec![];
         let _: User = try!(self.get_user(&grantee_name));
@@ -357,7 +357,7 @@ impl SecretsServer {
              FROM grants
              WHERE grantee = ?
             "));
-        let grants = try!(stmt.query_and_then(&[grantee_name],
+        let grants = try!(stmt.query_and_then(&[&grantee_name],
                                               |r| Grant::from_row(r)));
         for maybe_grant in grants {
             let grant = try!(maybe_grant);
@@ -368,12 +368,12 @@ impl SecretsServer {
             ret.push(grant);
         }
 
-        return Ok(ret);
+        Ok(ret)
     }
 
     pub fn add_grants(&mut self,
                       auth_user: &User,
-                      service_name: &String,
+                      service_name: &str,
                       grants: Vec<Grant>)
                       -> Result<(), SecretsError> {
         let service = try!(self.get_service(service_name));
@@ -392,12 +392,12 @@ impl SecretsServer {
             try!(Self::_create_grant(&trans, now, &auth_user, &service, grant));
         }
         try!(trans.commit());
-        return Ok(());
+        Ok(())
     }
 
     pub fn rotate_service(&mut self,
                           auth_user: &User,
-                          service_name: &String,
+                          service_name: &str,
                           grants: Vec<Grant>)
                           -> Result<(), SecretsError> {
         let service = try!(self.get_service(service_name));
@@ -415,7 +415,7 @@ impl SecretsServer {
 
         // delete all of the previous grants
         try!(trans.execute("DELETE FROM grants WHERE service_name=?",
-                           &[service_name]));
+                           &[&service_name]));
         // add the new ones
         for grant in grants {
             try!(Self::_create_grant(&trans, now, &auth_user, &service, grant));
@@ -423,12 +423,12 @@ impl SecretsServer {
         try!(Self::_touch_service(&trans, now, &auth_user, &service));
         try!(trans.commit());
 
-        return Ok(());
+        Ok(())
     }
 
     pub fn get_grant(&self,
-                     service_name: &String,
-                     grantee_name: &String)
+                     service_name: &str,
+                     grantee_name: &str)
                      -> Result<Grant, SecretsError> {
         let grant = try!(self.db.query_row_and_then(
             "SELECT service_name, grantee, grantor, ciphertext, signature,
@@ -436,14 +436,14 @@ impl SecretsServer {
              FROM grants
              WHERE service_name = ? AND grantee = ?
             ",
-            &[service_name, grantee_name],
+            &[&service_name, &grantee_name],
             |r| Grant::from_row(&r)));
 
         // verify the signature so we don't return invalid grants
         let grantor = try!(self.get_user(&grant.grantor));
         try!(grant.verify_signature(&grantor.public_sign));
 
-        return Ok(grant);
+        Ok(grant)
     }
 
     pub fn get_peer_info(&self) -> Result<PeerInfo, SecretsError> {
@@ -454,22 +454,22 @@ impl SecretsServer {
         let (public_key, _) = try!(self.get_keys());
         let (public_sign, _) = try!(self.get_signs());
 
-        return Ok(PeerInfo {
+        Ok(PeerInfo {
             cn: cn,
             fingerprint: fingerprint,
             public_key: public_key,
             public_sign: public_sign,
-        });
+        })
     }
 }
 
 impl SecretsContainer for SecretsServer {
     fn get_db(&self) -> &rusqlite::Connection {
-        return &self.db;
+        &self.db
     }
 
-    fn get_password(&self) -> &String {
-        return &self.password;
+    fn get_password(&self) -> &str {
+        &self.password
     }
 }
 

@@ -106,7 +106,7 @@ impl SecretsClient {
         try!(client.set_global("server_public_sign",
                                &server_info.public_sign.as_ref()));
 
-        return Ok(client);
+        Ok(client)
     }
 
     pub fn join_request(&self) -> Result<JoinRequest, SecretsError> {
@@ -118,7 +118,7 @@ impl SecretsClient {
             server_info: server_info,
             client_info: client_info,
         };
-        return Ok(join_request);
+        Ok(join_request)
     }
 
     pub fn get_server_info(&self) -> Result<PeerInfo, SecretsError> {
@@ -135,12 +135,12 @@ impl SecretsClient {
         let public_sign = sign::PublicKey::from_slice(&public_sign_vec);
         let public_sign = try!(public_sign.ok_or(keys::CryptoError::Unknown));
 
-        return Ok(PeerInfo {
+        Ok(PeerInfo {
             cn: cn,
             fingerprint: fingerprint,
             public_key: public_key,
             public_sign: public_sign,
-        });
+        })
     }
 
     pub fn get_peer_info(&self) -> Result<PeerInfo, SecretsError> {
@@ -150,12 +150,12 @@ impl SecretsClient {
         let (public_key, _) = try!(self.get_keys());
         let (public_sign, _) = try!(self.get_signs());
 
-        return Ok(PeerInfo {
+        Ok(PeerInfo {
             cn: cn,
             fingerprint: fingerprint,
             public_key: public_key,
             public_sign: public_sign,
-        });
+        })
     }
 
     pub fn check_server(&self) -> Result<(), SecretsError> {
@@ -168,7 +168,7 @@ impl SecretsClient {
             return Err(SecretsError::ClientError("how come I'm not in here?"
                 .to_string()));
         }
-        return Ok(());
+        Ok(())
     }
 
     fn server_request(&self,
@@ -223,7 +223,7 @@ impl SecretsClient {
         if let Some(err) = api_response.error {
             return Err(SecretsError::ClientError(err));
         }
-        return Ok(api_response);
+        Ok(api_response)
     }
 
     pub fn connect<P: AsRef<Path>>(config_file: P,
@@ -236,12 +236,12 @@ impl SecretsClient {
         };
         try!(client.check_db());
         try!(client.get_keys()); // this effectively checks their password
-        return Ok(client);
+        Ok(client)
     }
 
     pub fn username(&self) -> Result<String, SecretsError> {
         let username = try!(self.get_global::<String>("username"));
-        return Ok(username);
+        Ok(username)
     }
 
     pub fn create_service(&mut self,
@@ -253,28 +253,28 @@ impl SecretsClient {
         let username = try!(self.username());
 
         if !grantees.contains(&username) {
-            grantees.push(username.clone());
+            grantees.push(username.to_string());
         }
 
         // make sure the service doesn't exist and look up the users that we'll
         // grant to to get their keys
         let mut req = SecretsRequest::new(Method::Get, "/api/info");
-        req.add_arg("service", service_name.clone());
+        req.add_arg("service", service_name.to_string());
         for grantee_name in &grantees {
-            req.add_arg("user", grantee_name.clone());
+            req.add_arg("user", grantee_name.to_string());
         }
         let api_response = try!(self.server_request(req));
 
-        if api_response.services.len() > 0 {
+        if !api_response.services.is_empty() {
             return Err(SecretsError::ServiceAlreadyExists(service_name));
         }
 
         let service = Service {
-            name: service_name.clone(),
+            name: service_name.to_string(),
             created: now,
             modified: now,
-            creator: username.clone(),
-            modified_by: username.clone(),
+            creator: username.to_string(),
+            modified_by: username.to_string(),
         };
 
         let grants = try!(self._create_grants(plaintext,
@@ -293,12 +293,12 @@ impl SecretsClient {
         try!(create_req.set_json(service_creator));
         try!(self.server_request(create_req));
 
-        return Ok(());
+        Ok(())
     }
 
     fn _create_grants(&self,
                       plaintext: Vec<u8>,
-                      service_name: &String,
+                      service_name: &str,
                       now: i64,
                       grantee_names: Vec<String>,
                       grantee_map: HashMap<String, User>)
@@ -311,8 +311,8 @@ impl SecretsClient {
         for grantee_name in grantee_names {
             if let Some(grantee) = grantee_map.get(&grantee_name) {
                 let grant = try!(Grant::create(grantee_name,
-                                               username.clone(),
-                                               service_name.clone(),
+                                               username.to_string(),
+                                               service_name.to_string(),
                                                &plaintext,
                                                now,
                                                &private_key,
@@ -327,42 +327,42 @@ impl SecretsClient {
             }
         }
 
-        return Ok(grants);
+        Ok(grants)
     }
 
-    pub fn get_user(&self, username: &String) -> Result<User, SecretsError> {
+    pub fn get_user(&self, username: &str) -> Result<User, SecretsError> {
         let mut req = SecretsRequest::new(Method::Get, "/api/info");
-        req.add_arg("user", username.clone());
+        req.add_arg("user", username.to_string());
 
         let mut api_response = try!(self.server_request(req));
 
         let user = try!(api_response.users
             .remove(username)
             .ok_or(SecretsError::ClientError("user not found".to_string())));
-        return Ok(user);
+        Ok(user)
     }
 
     pub fn get_service(&self,
-                       service_name: &String)
+                       service_name: &str)
                        -> Result<Service, SecretsError> {
         let mut req = SecretsRequest::new(Method::Get, "/api/info");
-        req.add_arg("service", service_name.clone());
+        req.add_arg("service", service_name.to_string());
 
         let mut api_response = try!(self.server_request(req));
 
         let service = try!(api_response.services
             .remove(service_name)
             .ok_or(SecretsError::ClientError("service not found".to_string())));
-        return Ok(service);
+        Ok(service)
     }
 
     /// Get a grant by its key, addressed to anyone
     pub fn get_grant(&self,
-                     grant_name: &String)
+                     grant_name: &str)
                      -> Result<Grant, SecretsError> {
         let (service_name, username) = Grant::split_key(grant_name);
         let mut req = SecretsRequest::new(Method::Get, "/api/info");
-        req.add_arg("grant", grant_name.clone());
+        req.add_arg("grant", grant_name.to_string());
 
         let mut api_response = try!(self.server_request(req));
 
@@ -383,18 +383,18 @@ impl SecretsClient {
 
         try!(grant.verify_signature(&grantor.public_sign));
 
-        return Ok(grant);
+        Ok(grant)
     }
 
     /// Get a grant addressed to me, and decrypt it
     pub fn get_decrypted_grant(&self,
-                               service_name: &String)
+                               service_name: &str)
                                -> Result<DecryptedGrant, SecretsError> {
         let username = try!(self.username());
 
         let mut req = SecretsRequest::new(Method::Get, "/api/info");
-        req.add_arg("service", service_name.clone());
-        req.add_arg("grant", Grant::key_for(&service_name, &username));
+        req.add_arg("service", service_name.to_string());
+        req.add_arg("grant", Grant::key_for(service_name, &username));
 
         let mut api_response = try!(self.server_request(req));
 
@@ -415,7 +415,7 @@ impl SecretsClient {
 
         let decrypted = try!(self._decrypt_grant(grant, grantor));
 
-        return Ok(decrypted);
+        Ok(decrypted)
     }
 
     fn _decrypt_grant(&self,
@@ -437,7 +437,7 @@ impl SecretsClient {
             grant: grant,
             plaintext: plaintext,
         };
-        return Ok(decrypted_grant);
+        Ok(decrypted_grant)
     }
 
     pub fn add_grants(&self,
@@ -451,10 +451,10 @@ impl SecretsClient {
         // our new grantees
         let grant_key = Grant::key_for(&service_name, &username);
         let mut req = SecretsRequest::new(Method::Get, "/api/info");
-        req.add_arg("service", service_name.clone());
+        req.add_arg("service", service_name.to_string());
         req.add_arg("grant", grant_key);
         for ref grantee_name in &grantees {
-            req.add_arg("user", (*grantee_name).clone());
+            req.add_arg("user", (*grantee_name).to_string());
         }
         let mut api_response = try!(self.server_request(req));
 
@@ -490,19 +490,19 @@ impl SecretsClient {
         try!(add_grants_req.set_json(granter));
         try!(self.server_request(add_grants_req));
 
-        return Ok(());
+        Ok(())
     }
 
     pub fn rotate_service(&self,
-                          service_name: &String,
+                          service_name: &str,
                           rotation_strategy: &RotationStrategy,
                           plaintext: Vec<u8>)
                           -> Result<(), SecretsError> {
         let username = try!(self.username());
 
         let mut req = SecretsRequest::new(Method::Get, "/api/info");
-        req.add_arg("service", service_name.clone());
-        req.add_arg("grants-for-service", service_name.clone());
+        req.add_arg("service", service_name.to_string());
+        req.add_arg("grants-for-service", service_name.to_string());
 
         // this just simplifies some codepaths: rotations always include ourself
         // even if we weren't specified in the rotation strategy. so by adding
@@ -552,7 +552,7 @@ impl SecretsClient {
             .filter(|w| !api_response.users.contains_key(*w))
             .map(|w| w.to_owned())
             .collect();
-        if missing_users.len() > 0 {
+        if !missing_users.is_empty() {
             return Err(SecretsError::UserDoesntExist(missing_users.join(",")));
         }
 
@@ -564,10 +564,9 @@ impl SecretsClient {
                  current_grantee_names.join(","));
         println!("New grantees:\n\t{}", new_grantee_names.join(","));
 
-        if *rotation_strategy != RotationStrategy::Copy {
-            if !try!(utils::prompt_yn("does that look right? [y/n] ")) {
-                return Err(SecretsError::Authentication("refused"));
-            }
+        if *rotation_strategy != RotationStrategy::Copy
+                && !try!(utils::prompt_yn("does that look right? [y/n] ")) {
+            return Err(SecretsError::Authentication("refused"));
         }
 
         let now = UTC::now().timestamp();
@@ -578,15 +577,14 @@ impl SecretsClient {
                                                   api_response.users));
 
         let service_rotator = GrantRequest {
-            service_name: service_name.clone(),
+            service_name: service_name.to_string(),
             grants: new_grants,
         };
 
         let mut rotate_req = SecretsRequest::new(Method::Post, "/api/rotate");
         try!(rotate_req.set_json(service_rotator));
         try!(self.server_request(rotate_req));
-
-        return Ok(());
+        Ok(())
     }
 
     pub fn all_services(&self) -> Result<Vec<Service>, SecretsError> {
@@ -594,14 +592,14 @@ impl SecretsClient {
         req.add_arg("all-services", "true".to_string());
         let mut api_response = try!(self.server_request(req));
         let services = api_response.services.drain().map(|(_k, v)| v).collect();
-        return Ok(services);
+        Ok(services)
     }
 
     pub fn grants_for_grantee(&self,
-                              grantee_name: &String)
+                              grantee_name: &str)
                               -> Result<Vec<Grant>, SecretsError> {
         let mut req = SecretsRequest::new(Method::Get, "/api/info");
-        req.add_arg("grants-for-grantee", grantee_name.clone());
+        req.add_arg("grants-for-grantee", grantee_name.to_string());
         let mut api_response = try!(self.server_request(req));
 
         let mut ret = vec![];
@@ -611,15 +609,14 @@ impl SecretsClient {
                 ret.push(grant);
             }
         }
-
-        return Ok(ret);
+        Ok(ret)
     }
 
     pub fn grants_for_service(&self,
-                              service_name: &String)
+                              service_name: &str)
                               -> Result<Vec<Grant>, SecretsError> {
         let mut req = SecretsRequest::new(Method::Get, "/api/info");
-        req.add_arg("grants-for-service", service_name.clone());
+        req.add_arg("grants-for-service", service_name.to_string());
         let mut api_response = try!(self.server_request(req));
 
         let mut ret = vec![];
@@ -629,8 +626,7 @@ impl SecretsClient {
                 ret.push(grant);
             }
         }
-
-        return Ok(ret);
+        Ok(ret)
     }
 }
 
@@ -675,14 +671,14 @@ impl SecretsRequest {
 
     fn add_arg(&mut self, name: &'static str, value: String) -> &mut Self {
         self.arguments.push((name, value));
-        return self;
+        self
     }
 
     fn set_json<T: Serialize>(&mut self, value: T) -> Result<(), SecretsError> {
         debug_assert!(self.json.is_none());
         let serialized = try!(json_to_vec(&value));
         self.json = Some(serialized);
-        return Ok(());
+        Ok(())
     }
 }
 
@@ -713,21 +709,21 @@ fn verify_ssl_fingerprint(_preverify_ok: bool,
     }
     let cn = (*cn.unwrap()).to_owned();
 
-    let cn_matches = utils::constant_time_compare(&cn.as_bytes(),
-                                                  &expected_cn.as_bytes());
+    let cn_matches = utils::constant_time_compare(cn.as_bytes(),
+                                                  expected_cn.as_bytes());
     let fingerprint_matches =
-        utils::constant_time_compare(&remote_fingerprint.as_bytes(),
-                                     &expected_fingerprint.as_bytes());
-    return cn_matches && fingerprint_matches;
+        utils::constant_time_compare(remote_fingerprint.as_bytes(),
+                                     expected_fingerprint.as_bytes());
+    cn_matches && fingerprint_matches
 }
 
 impl SecretsContainer for SecretsClient {
     fn get_db(&self) -> &rusqlite::Connection {
-        return &self.db;
+        &self.db
     }
 
-    fn get_password(&self) -> &String {
-        return &self.password;
+    fn get_password(&self) -> &str {
+        &self.password
     }
 }
 

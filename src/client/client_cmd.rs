@@ -25,7 +25,7 @@ pub const PASSWORD_SOURCE_HELP: &'static str = "\
     \tprompt (you will be prompted)";
 
 fn make_clap<'a, 'b>() -> App<'a, 'b> {
-    return App::new("secrets-client")
+    App::new("secrets-client")
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .arg(Arg::with_name("db")
             .short("d")
@@ -182,7 +182,6 @@ fn make_clap<'a, 'b>() -> App<'a, 'b> {
                 .help("the name of the service")
                 .takes_value(true)
                 .required(true)))
-    ;
 }
 
 pub fn main() {
@@ -245,13 +244,12 @@ pub fn main() {
             .unwrap();
         let jr = client.join_request().unwrap();
         io::stderr()
-            .write("Send this to your friendly local secrets admin:\n"
-                .as_bytes())
+            .write(b"Send this to your friendly local secrets admin:\n")
             .unwrap();
         io::stderr().flush().unwrap();
         let pastable = jr.to_pastable().unwrap();
         io::stdout().write(pastable.as_bytes()).unwrap();
-        io::stdout().write("\n".as_bytes()).unwrap();
+        io::stdout().write(b"\n").unwrap();
         exit(0);
     }
 
@@ -402,7 +400,7 @@ pub fn main() {
                 };
 
                 for grantee_name in &grantee_names {
-                    let grants = instance.grants_for_grantee(&grantee_name)
+                    let grants = instance.grants_for_grantee(grantee_name)
                         .unwrap();
                     for grant in grants {
                         if grantee_names.len() == 1 {

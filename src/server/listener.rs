@@ -40,13 +40,13 @@ impl ServerHandler {
 
         let mut api = ApiResponse::new();
 
-        if url_matches(&request, Method::Get, "/api/health") {
+        if url_matches(request, Method::Get, "/api/health") {
             try!(instance.check_db());
             api.healthy = Some(true);
             return Ok((StatusCode::Ok, api));
         }
 
-        if url_matches(&request, Method::Get, "/api/server") {
+        if url_matches(request, Method::Get, "/api/server") {
             let server_info = try!(instance.get_peer_info());
             api.server_info = Some(server_info);
             return Ok((StatusCode::Ok, api));
@@ -56,7 +56,7 @@ impl ServerHandler {
 
         let auth_user = try!(authenticate_request(&instance, &request));
 
-        if url_matches(&request, Method::Get, "/api/auth") {
+        if url_matches(request, Method::Get, "/api/auth") {
             // this URL only checks that the client can authenticate. they
             // don't really care about the result
             api.users.insert(auth_user.username.clone(), auth_user.clone());
@@ -64,9 +64,9 @@ impl ServerHandler {
         }
 
         let query_params: HashMap<String, Vec<String>> =
-            get_query_params(&request);
+            get_query_params(request);
 
-        if url_matches(&request, Method::Get, "/api/info") {
+        if url_matches(request, Method::Get, "/api/info") {
             if let Some(unames) = query_params.get("user") {
                 for ref uname in unames {
                     let user = try!(instance.get_user(uname));
@@ -101,7 +101,7 @@ impl ServerHandler {
 
                     api.grants
                         .entry(service_name)
-                        .or_insert_with(|| HashMap::new())
+                        .or_insert_with(HashMap::new)
                         .insert(grantee_name, grant);
                 }
             }
@@ -125,7 +125,7 @@ impl ServerHandler {
 
                         api.grants
                             .entry(service_name.clone())
-                            .or_insert_with(|| HashMap::new())
+                            .or_insert_with(HashMap::new)
                             .insert(grantee.username.clone(), grant);
 
                         api.users.insert(grantee.username.clone(), grantee);
@@ -151,7 +151,7 @@ impl ServerHandler {
 
                         api.grants
                             .entry(grant.service_name.clone())
-                            .or_insert_with(|| HashMap::new())
+                            .or_insert_with(HashMap::new)
                             .insert(grantee_name.clone(), grant);
                     }
                 }
@@ -168,7 +168,7 @@ impl ServerHandler {
 
         // ======== POST ========
 
-        if url_matches(&request, Method::Post, "/api/create-service") {
+        if url_matches(request, Method::Post, "/api/create-service") {
             let create_req: ServiceCreateRequest =
                 try!(dejson_from_reader(&mut request));
             let service = create_req.service;
@@ -184,7 +184,7 @@ impl ServerHandler {
             return Ok((StatusCode::Ok, api));
         }
 
-        if url_matches(&request, Method::Post, "/api/grant") {
+        if url_matches(request, Method::Post, "/api/grant") {
             let grant_req: GrantRequest =
                 try!(dejson_from_reader(&mut request));
             let service_name = grant_req.service_name;
@@ -196,7 +196,7 @@ impl ServerHandler {
             return Ok((StatusCode::Ok, api));
         }
 
-        if url_matches(&request, Method::Post, "/api/rotate") {
+        if url_matches(request, Method::Post, "/api/rotate") {
             let rotate_req: GrantRequest =
                 try!(dejson_from_reader(&mut request));
             let service_name = rotate_req.service_name;
@@ -208,7 +208,7 @@ impl ServerHandler {
             return Ok((StatusCode::Ok, api));
         }
 
-        return Ok((StatusCode::NotFound, api));
+        Ok((StatusCode::NotFound, api))
     }
 
     fn write_response(&self,
@@ -241,16 +241,16 @@ impl ServerHandler {
         // processing, we get called with it. We try to guess the right return
         // code to set
 
-        match error {
-            &SecretsError::ClientError(ref err) => {
+        match *error {
+            SecretsError::ClientError(ref err) => {
                 *response.status_mut() = StatusCode::BadRequest;
-                response.send(&format!("{}", err).as_bytes())
+                response.send(err.as_bytes())
             }
-            &SecretsError::Authentication(ref err) => {
+            SecretsError::Authentication(ref err) => {
                 *response.status_mut() = StatusCode::Unauthorized;
-                response.send(&format!("{}", err).as_bytes())
+                response.send(err.as_bytes())
             }
-            &SecretsError::Crypto(_) |
+            SecretsError::Crypto(_) |
             _ => {
                 // SecretsError::Crypto is probably because they are screwing
                 // around with trying to guess keys or something. It's important
@@ -333,13 +333,13 @@ fn authenticate_request(instance: &SecretsServer,
         };
 
     let user = try!(instance.authenticate(&remote_cn, &remote_fingerprint));
-    return Ok(user);
+    Ok(user)
 }
 
 fn pretend_verify(_preverify_ok: bool, _ctx: &X509StoreContext) -> bool {
     // we need to set this callback in order for openssl to request the client
     // cert, but we don't verify it here
-    return true;
+    true
 }
 
 fn make_ssl(instance: &mut SecretsServer) -> Result<Openssl, SecretsError> {
@@ -350,7 +350,7 @@ fn make_ssl(instance: &mut SecretsServer) -> Result<Openssl, SecretsError> {
     try!(ssl_context.set_private_key(&private_pem));
     try!(ssl_context.check_private_key());
     let ssl = Openssl { context: Arc::new(ssl_context) };
-    return Ok(ssl);
+    Ok(ssl)
 }
 
 pub fn listen(mut instance: SecretsServer,
@@ -383,11 +383,11 @@ fn get_query_params(request: &Request) -> HashMap<String, Vec<String>> {
         }
     };
 
-    if !uri.contains("?") {
+    if !uri.contains('?') {
         return ret;
     }
 
-    let params = uri.splitn(2, "?").nth(1).unwrap();
+    let params = uri.splitn(2, '?').nth(1).unwrap();
 
     for (ref key, ref value) in parse_qs(params.as_bytes()) {
         let key = key.to_string();
@@ -396,5 +396,5 @@ fn get_query_params(request: &Request) -> HashMap<String, Vec<String>> {
         (*vec).push(value);
     }
 
-    return ret;
+    ret
 }

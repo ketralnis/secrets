@@ -84,7 +84,7 @@ pub fn main() {
     config_file.push(matches.value_of_os("db").unwrap());
 
     let pwsd = matches.value_of("password").unwrap();
-    let pws = password::parse_password_source(&pwsd).unwrap();
+    let pws = password::parse_password_source(pwsd).unwrap();
     let pw = password::evaluate_password_source(pws, "store password").unwrap();
 
     let config_exists = config_file.is_file();
@@ -157,7 +157,7 @@ pub fn main() {
 }
 
 fn print_plan_firing(instance: &server::SecretsServer,
-                     firee: &String,
+                     firee: &str,
                      grants: Vec<Grant>) -> Result<(), SecretsError> {
     let user = try!(instance.get_user(firee));
 
@@ -186,7 +186,7 @@ fn print_plan_firing(instance: &server::SecretsServer,
             .map(|s| (*s).to_owned())
             .collect();
 
-        if let &Some(knower) = knower {
+        if let Some(knower) = *knower {
             println!("{} should run:\n\
                 \tsecrets rotate {} --withhold={}",
                 knower,
@@ -201,18 +201,18 @@ fn print_plan_firing(instance: &server::SecretsServer,
         }
     }
 
-    return Ok(());
+    Ok(())
 }
 
 /// When we're trying to fire someone, we'll need to run around and find other
 /// people that possess a grant to each service the firee holds so that we can
 /// rotate them. This function tries to minimise the number of people required
 /// to rotate every service
-fn plan_firing<'a, S, U>(known_by: &'a HashMap<S, Vec<U>>)
-                         -> HashMap<Option<&'a U>, Vec<&'a S>>
-                         where S: Hash + Ord,
-                               U: Hash + Eq,
-                         {
+fn plan_firing<S, U>(known_by: &HashMap<S, Vec<U>>)
+                     -> HashMap<Option<&U>, Vec<&S>>
+                     where S: Hash + Ord,
+                           U: Hash + Eq,
+                     {
     // uses a naive greedy set covering algorithm
 
     let mut ret: HashMap<Option<&U>, Vec<&S>> = HashMap::new();
@@ -253,7 +253,7 @@ fn plan_firing<'a, S, U>(known_by: &'a HashMap<S, Vec<U>>)
         }
     }
 
-    return ret;
+    ret
 }
 
 #[cfg(test)]

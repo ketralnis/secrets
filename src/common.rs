@@ -1,4 +1,4 @@
-/// code shared by SecretsClient and SecretsServer
+/// Code shared by `SecretsClient` and `SecretsServer`
 
 use std::io;
 use std::io::Cursor;
@@ -51,7 +51,7 @@ quick_error! {
     }
 }
 
-pub fn init_ssl_cert<'ctx>(cn: &str) -> Result<(Vec<u8>, Vec<u8>), SecretsError> {
+pub fn init_ssl_cert(cn: &str) -> Result<(Vec<u8>, Vec<u8>), SecretsError> {
     let gen = X509Generator::new()
         .set_bitlength(4096)
         .add_name("CN".to_owned(), cn.to_string())
@@ -65,7 +65,7 @@ pub fn init_ssl_cert<'ctx>(cn: &str) -> Result<(Vec<u8>, Vec<u8>), SecretsError>
     let mut private_pem_vec = vec![];
     try!(private_pem.write_pem(&mut private_pem_vec));
 
-    return Ok((public_pem_vec, private_pem_vec));
+    Ok((public_pem_vec, private_pem_vec))
 }
 
 pub fn create_db<P: AsRef<Path>>
@@ -80,7 +80,7 @@ pub fn connect_db<P: AsRef<Path>>
      -> Result<rusqlite::Connection, SecretsError> {
     let conn = try!(_connect_db(config_file, false));
     try!(check_db(&conn));
-    return Ok(conn);
+    Ok(conn)
 }
 
 fn _connect_db<P: AsRef<Path>>
@@ -135,12 +135,12 @@ pub fn default_ssl_context() -> Result<SslContext, SecretsError> {
     let mut ssl_context = try!(SslContext::new(SslMethod::Tlsv1));
     ssl_context.set_options(SSL_OP_NO_SSLV2 | SSL_OP_NO_SSLV3 | SSL_OP_NO_COMPRESSION);
     try!(ssl_context.set_cipher_list("ALL!EXPORT!EXPORT40!EXPORT56!aNULL!LOW!RC4@STRENGTH"));
-    return Ok(ssl_context);
+    Ok(ssl_context)
 }
 
 pub trait SecretsContainer {
     fn get_db(&self) -> &rusqlite::Connection;
-    fn get_password(&self) -> &String;
+    fn get_password(&self) -> &str;
 
     fn check_db(&self) -> Result<(), SecretsError> {
         let db = self.get_db();
@@ -175,7 +175,7 @@ pub trait SecretsContainer {
         let private_key = box_::SecretKey::from_slice(&private_key_vec);
         let private_key = try!(private_key.ok_or(keys::CryptoError::Unknown));
 
-        return Ok((public_key, private_key));
+        Ok((public_key, private_key))
     }
 
     fn get_signs(&self)
@@ -189,7 +189,7 @@ pub trait SecretsContainer {
         let private_sign = sign::SecretKey::from_slice(&private_sign_vec);
         let private_sign = try!(private_sign.ok_or(keys::CryptoError::Unknown));
 
-        return Ok((public_sign, private_sign));
+        Ok((public_sign, private_sign))
     }
 
     fn get_pems(&self) -> Result<(X509, PKey), SecretsError> {
@@ -203,7 +203,7 @@ pub trait SecretsContainer {
         let private_pem =
             try!(PKey::private_key_from_pem(&mut private_pem_vec));
 
-        return Ok((public_pem, private_pem));
+        Ok((public_pem, private_pem))
     }
 
     fn ssl_cn(&self) -> Result<String, SecretsError> {
@@ -211,7 +211,7 @@ pub trait SecretsContainer {
         let cn = public_pem.subject_name().text_by_nid(Nid::CN);
         let cn = try!(cn.ok_or(SecretsError::Unknown("pem has no CN")));
         let cn = cn.to_owned();
-        return Ok(cn);
+        Ok(cn)
     }
 
     fn ssl_fingerprint(&self) -> Result<String, SecretsError> {
@@ -221,7 +221,7 @@ pub trait SecretsContainer {
             try!(fingerprint.ok_or(SecretsError::Unknown("stored cert has \
                                                           no fingerprint")));
         let fingerprint = fingerprint.to_hex();
-        return Ok(fingerprint);
+        Ok(fingerprint)
     }
 
     fn get_global<T: FromSql + Authable>(&self,
@@ -232,7 +232,7 @@ pub trait SecretsContainer {
             "SELECT value FROM globals WHERE key = ? AND NOT encrypted",
             &[&key_name],
             |row| row.get(0)));
-        return Ok(value);
+        Ok(value)
     }
 
     fn set_global<'a, T: ToSql + Authable>(&mut self,
@@ -261,7 +261,7 @@ pub trait SecretsContainer {
         let password = self.get_password();
         let plaintext = try!(keys::decrypt_blob_with_password(&ciphertext,
                                                   password.as_bytes()));
-        return Ok(plaintext);
+        Ok(plaintext)
     }
 
     fn set_encrypted_global(&mut self,
@@ -278,6 +278,6 @@ pub trait SecretsContainer {
             "INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
              VALUES(?, ?, ?, 1)",
             &[&key_name, &ciphertext, &UTC::now().timestamp()]));
-        return Ok(());
+        Ok(())
     }
 }

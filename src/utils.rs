@@ -5,18 +5,18 @@ use chrono::{Local, TimeZone};
 use regex;
 
 pub fn validate_host(name: &str, value: &str) -> Result<(), String> {
-    return re_validator(name, r"[a-zA-Z0-9.-]+(:[0-9]{1,5})?", value);
+    re_validator(name, r"[a-zA-Z0-9.-]+(:[0-9]{1,5})?", value)
 }
 
 pub fn re_validator(name: &str,
                     re_expr: &'static str,
                     value: &str)
                     -> Result<(), String> {
-    let re = regex::Regex::new(&re_expr).unwrap();
+    let re = regex::Regex::new(re_expr).unwrap();
     if re.is_match(value) {
-        return Ok(());
+        Ok(())
     } else {
-        return Err(format!("{}: {} doesn't match /{}/", name, value, re_expr));
+        Err(format!("{}: {} doesn't match /{}/", name, value, re_expr))
     }
 }
 
@@ -53,13 +53,13 @@ pub fn constant_time_compare(actual: &[u8], expected: &[u8]) -> bool {
     for x in 0..actual_len {
         res |= (actual[x] ^ expected[x % expected_len]) as usize;
     }
-    return res == 0;
+    res == 0
 }
 
 pub fn pretty_date(timestamp: i64) -> String {
     let dt = Local.timestamp(timestamp, 0);
     let local = dt.with_timezone(&Local);
-    return local.to_rfc2822();
+    local.to_rfc2822()
 }
 
 #[cfg(test)]
@@ -69,8 +69,8 @@ mod tests {
     #[test]
     pub fn test_constant_time_compare() {
         let compare = |actual: &str, expected: &str| {
-            return constant_time_compare(&actual.as_bytes(),
-                                         &expected.as_bytes());
+            constant_time_compare(&actual.as_bytes(),
+                                  &expected.as_bytes())
         };
         assert_eq!(true, compare("abc", "abc"));
         assert_eq!(false, compare("abc", "ab"));

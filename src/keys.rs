@@ -83,7 +83,7 @@ pub fn encrypt_blob_with_password(value: &[u8],
     Ok(ret)
 }
 
-/// Decrypt a blob that has been stored with encrypt_blob_with_password.
+/// Decrypt a blob that has been stored with `encrypt_blob_with_password`.
 /// **Note** it is not safe to use this to decrypt blobs received from untrusted
 /// sources (as the work factors for the KDF are included unauthenticated in the
 /// blob, so an attacker could cause them to be arbitrarily expensive)
@@ -115,7 +115,7 @@ pub fn decrypt_blob_with_password(blob: &[u8],
     let plaintext =
         try!(secretbox::open(&ciphertext[..], &nonce, &derived_key)
             .map_err(|_: ()| CryptoError::CantDecrypt));
-    return Ok(plaintext);
+    Ok(plaintext)
 }
 
 #[allow(dead_code)]
@@ -136,7 +136,7 @@ pub fn auth_items_with_password(items: &Authable,
 
     ret.extend_from_slice(&tag[..]);
 
-    return Ok(ret);
+    Ok(ret)
 }
 
 #[allow(dead_code)]
@@ -167,9 +167,9 @@ pub fn check_auth_items_with_password(items: &Authable,
     let authed = auth::verify(&tag, &blob, &key);
 
     if authed {
-        return Ok(());
+        Ok(())
     } else {
-        return Err(CryptoError::CantDecrypt);
+        Err(CryptoError::CantDecrypt)
     }
 }
 
@@ -213,7 +213,7 @@ pub fn decrypt_from(blob: &[u8],
     let plaintext = try!(box_::open(&ciphertext[..], &nonce, &from, &to)
         .map_err(|_| CryptoError::CantDecrypt));
 
-    return Ok(plaintext);
+    Ok(plaintext)
 }
 
 /// Trait for things that we can build authentication tokens out of
@@ -225,8 +225,7 @@ impl<'a, 'b> Authable for &'a [&'b Authable] {
     fn to_authable(&self) -> Vec<u8> {
         let mapped = self.iter().map(|v| v.to_authable());
         let collected: Vec<Vec<u8>> = mapped.collect();
-        let joined = collected.join(&b',');
-        joined
+        collected.join(&b',')
     }
 }
 
@@ -266,19 +265,19 @@ impl Authable for Vec<u8> {
 }
 
 impl<'a> Authable for &'a str {
-    fn to_authable<'b>(&'b self) -> Vec<u8> {
+    fn to_authable(&self) -> Vec<u8> {
         self.as_bytes().to_vec()
     }
 }
 
 impl Authable for box_::PublicKey {
-    fn to_authable<'a>(&'a self) -> Vec<u8> {
+    fn to_authable(&self) -> Vec<u8> {
         self.as_ref().to_vec()
     }
 }
 
 impl Authable for sign::PublicKey {
-    fn to_authable<'a>(&'a self) -> Vec<u8> {
+    fn to_authable(&self) -> Vec<u8> {
         self.as_ref().to_vec()
     }
 }
