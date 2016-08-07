@@ -124,6 +124,7 @@ $SERVER fire florence
 ! $CLIENT_FLORENCE check-server
 ! $CLIENT_FLORENCE get twitter2
 
+echo 'success!'
 exit 0
 
 # --------- TODO: --------

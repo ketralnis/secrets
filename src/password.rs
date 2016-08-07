@@ -30,7 +30,6 @@ quick_error! {
         Io(err: io::Error) {from()}
         Utf8(err: string::FromUtf8Error) {from()}
         Editor(what: String) {}
-        Getpass(err: getpass::GetpassError) {from()}
     }
 }
 
@@ -98,7 +97,7 @@ pub fn evaluate_password_source(source: PasswordSource)
             Ok(s)
         }
         PasswordSource::Prompt => {
-            let val = try!(getpass::get_pass("password: "));
+            let val = getpass::get_pass("password: ");
             let password = try!(String::from_utf8(val));
             Ok(password)
         }
