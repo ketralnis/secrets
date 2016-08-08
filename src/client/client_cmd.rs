@@ -276,7 +276,9 @@ pub fn main() {
             let secret_source = password::parse_password_source(secret_source)
                 .unwrap();
             let secret_value =
-                password::evaluate_password_source(secret_source, "secret data").unwrap();
+                password::evaluate_password_source(secret_source,
+                                                   "secret data")
+                    .unwrap();
             let secret_value = secret_value.as_bytes().to_owned();
             instance.create_service(service_name.to_owned(),
                                     secret_value,
@@ -368,17 +370,18 @@ pub fn main() {
                 };
 
             let secret_source = subargs.value_of("source").unwrap();
-            let secret_source =
-                password::parse_password_source(secret_source).unwrap();
+            let secret_source = password::parse_password_source(secret_source)
+                .unwrap();
             let secret_value =
                 password::evaluate_password_source(secret_source,
-                                                   "secret value").unwrap();
+                                                   "secret value")
+                    .unwrap();
             let secret_value = secret_value.as_bytes().to_owned();
 
             for service_name in service_names {
                 instance.rotate_service(&service_name,
-                                        &rotation_stategy,
-                                        secret_value.clone())
+                                    &rotation_stategy,
+                                    secret_value.clone())
                     .unwrap();
             }
         }

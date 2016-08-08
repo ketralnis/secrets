@@ -70,7 +70,8 @@ pub fn parse_password_source(source: &str) -> Result<PasswordSource, String> {
     }
 }
 
-pub fn evaluate_password_source(source: PasswordSource, prompt: &'static str)
+pub fn evaluate_password_source(source: PasswordSource,
+                                prompt: &'static str)
                                 -> Result<String, PasswordError> {
     match source {
         PasswordSource::Password(x) => Ok(x),

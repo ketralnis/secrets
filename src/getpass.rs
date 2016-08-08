@@ -3,8 +3,8 @@ use std::ffi::{CStr, CString};
 use libc;
 
 extern "C" {
-  fn getpass(prompt: *const libc::c_char) -> *const libc::c_char;
-  fn bzero(ptr: *mut libc::c_void, len: libc::size_t) -> libc::c_void;
+    fn getpass(prompt: *const libc::c_char) -> *const libc::c_char;
+    fn bzero(ptr: *mut libc::c_void, len: libc::size_t) -> libc::c_void;
 }
 
 /// Use `libc`'s `getpass`

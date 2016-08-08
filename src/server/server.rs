@@ -80,22 +80,26 @@ impl SecretsServer {
                    public_sign: sign::PublicKey)
                    -> Result<User, SecretsError> {
         let now = UTC::now().timestamp();
-        try!(self.db.execute(
-            "INSERT INTO users(username, ssl_fingerprint,
-                               public_key, public_sign,
-                               created)
-             VALUES(?,?,?,?,?)
-            ",
-            &[&username,
-              &ssl_fingerprint,
-              &public_key.as_ref(),
-              &public_sign.as_ref(),
-              &now]));
+        let q = "
+            INSERT INTO users(username, ssl_fingerprint,
+                              public_key, public_sign,
+                              created)
+            VALUES(?,?,?,?,?)
+          ";
+        try!(self.db.execute(q,
+                             &[&username,
+                               &ssl_fingerprint,
+                               &public_key.as_ref(),
+                               &public_sign.as_ref(),
+                               &now]));
         let user = try!(self.get_user(&username));
         Ok(user)
     }
 
-    pub fn fire_user(&self, username: &str, force: bool) -> Result<FireResult, SecretsError> {
+    pub fn fire_user(&self,
+                     username: &str,
+                     force: bool)
+                     -> Result<FireResult, SecretsError> {
         let now = UTC::now().timestamp();
         let user = try!(self.get_user(username));
         let granted_services = try!(self.get_grants_for_grantee(username));
@@ -104,28 +108,30 @@ impl SecretsServer {
         // by this. this is why we enforce that new services and rotations must
         // always include the person setting the new secret
         if !force && !granted_services.is_empty() {
-            return Ok(FireResult::OutstandingGrants{grants: granted_services});
+            return Ok(FireResult::OutstandingGrants {
+                grants: granted_services,
+            });
         }
 
         if user.disabled.is_none() {
             // if they weren't already disabled, mark the time.
-            try!(self.db.execute(
-                "UPDATE users SET disabled=? WHERE username=?",
-                &[&now, &username]));
+            let q = "UPDATE users SET disabled=? WHERE username=?";
+            try!(self.db.execute(q, &[&now, &username]));
         }
 
         Ok(FireResult::Success)
     }
 
     pub fn get_user(&self, username: &str) -> Result<User, SecretsError> {
-        let user = try!(self.db.query_row_and_then(
-            "SELECT username, public_key, public_sign, ssl_fingerprint,
-                    created, disabled
-             FROM users
-             WHERE username=?
-            ",
-            &[&username],
-            User::from_row));
+        let q = "
+            SELECT username, public_key, public_sign, ssl_fingerprint,
+                   created, disabled
+            FROM users
+            WHERE username=?
+        ";
+        let user = try!(self.db.query_row_and_then(q,
+                                                   &[&username],
+                                                   User::from_row));
         Ok(user)
     }
 
@@ -257,16 +263,17 @@ impl SecretsServer {
             return Err(SecretsError::ServerError("you're lying".to_string()));
         }
 
-        try!(trans.execute(
-            "INSERT INTO services(service_name, created, modified,
-                                  creator, modified_by)
-             VALUES(?,?,?,?,?)
-            ",
-            &[&service.name,
-              &service.created,
-              &service.modified,
-              &service.creator,
-              &service.modified_by]));
+        let q = "
+            INSERT INTO services(service_name, created, modified,
+                                 creator, modified_by)
+            VALUES(?,?,?,?,?)
+        ";
+        try!(trans.execute(q,
+                           &[&service.name,
+                             &service.created,
+                             &service.modified,
+                             &service.creator,
+                             &service.modified_by]));
 
         Ok(())
     }
@@ -293,17 +300,19 @@ impl SecretsServer {
 
         try!(grant.verify_signature(&auth_user.public_sign));
 
-        try!(trans.execute("INSERT OR IGNORE -- TODO ignore is best?
-             INTO grants(service_name, grantor, grantee, ciphertext,
-                         signature, created)
-             VALUES (?,?,?,?,?,?)
-            ",
-            &[&grant.service_name,
-              &grant.grantor,
-              &grant.grantee,
-              &grant.ciphertext,
-              &grant.signature.as_ref(),
-              &grant.created]));
+        let q = "
+            INSERT OR IGNORE -- TODO ignore is best?
+            INTO grants(service_name, grantor, grantee, ciphertext,
+                        signature, created)
+            VALUES (?,?,?,?,?,?)
+        ";
+        try!(trans.execute(q,
+                           &[&grant.service_name,
+                             &grant.grantor,
+                             &grant.grantee,
+                             &grant.ciphertext,
+                             &grant.signature.as_ref(),
+                             &grant.created]));
         Ok(())
     }
 
@@ -312,12 +321,12 @@ impl SecretsServer {
                       auth_user: &User,
                       service: &Service)
                       -> Result<(), SecretsError> {
-        try!(trans.execute(
-            "UPDATE services
-             SET modified_by=?, modified=?
-             WHERE service_name=?
-            ",
-            &[&auth_user.username, &now, &service.name]));
+        let q = "
+            UPDATE services
+            SET modified_by=?, modified=?
+            WHERE service_name=?
+        ";
+        try!(trans.execute(q, &[&auth_user.username, &now, &service.name]));
         Ok(())
     }
 
@@ -326,12 +335,12 @@ impl SecretsServer {
                                   -> Result<Vec<Grant>, SecretsError> {
         let mut ret = vec![];
         let _: Service = try!(self.get_service(service_name));
-        let mut stmt = try!(self.db.prepare(
-            "SELECT service_name, grantee, grantor, ciphertext, signature,
-                    created
-             FROM grants
-             WHERE service_name = ?
-            "));
+        let q = "SELECT service_name, grantee, grantor, ciphertext, signature,
+                        created
+                 FROM grants
+                 WHERE service_name = ?
+        ";
+        let mut stmt = try!(self.db.prepare(q));
         let grants = try!(stmt.query_and_then(&[&service_name],
                                               |r| Grant::from_row(r)));
         for maybe_grant in grants {
@@ -476,12 +485,14 @@ impl SecretsContainer for SecretsServer {
 #[derive(PartialEq, Debug)]
 pub enum FireResult {
     Success,
-    OutstandingGrants {grants: Vec<Grant>},
+    OutstandingGrants {
+        grants: Vec<Grant>,
+    },
 }
 
 fn create_server_schema(conn: &mut rusqlite::Connection)
                         -> Result<(), rusqlite::Error> {
-    try!(conn.execute_batch("
+    let q = "
         CREATE TABLE users (
             username PRIMARY KEY NOT NULL,
             public_key NOT NULL,
@@ -504,13 +515,13 @@ fn create_server_schema(conn: &mut rusqlite::Connection)
             service_name NOT NULL REFERENCES services(service_name),
             created INTEGER NOT NULL,
             grantor NOT NULL REFERENCES users(username),
-            ciphertext NOT NULL, -- encrypted to grantee's public key
-            signature NOT NULL, -- signed by grantor's public key
+            ciphertext BLOB NOT NULL, -- encrypted to grantee's public key
+            signature BLOB NOT NULL, -- signed by grantor's public key
             PRIMARY KEY(grantee, service_name)
         );
         CREATE INDEX grants_services ON grants(service_name);
-        "));
-
+    ";
+    try!(conn.execute_batch(q));
     Ok(())
 }
 

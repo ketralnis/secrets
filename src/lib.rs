@@ -1,6 +1,3 @@
-#[cfg(test)] extern crate tempdir;
-#[macro_use(quick_error)] extern crate quick_error;
-#[macro_use] extern crate log;
 extern crate byteorder;
 extern crate chrono;
 extern crate clap;
@@ -8,7 +5,11 @@ extern crate env_logger;
 extern crate flate2;
 extern crate hyper;
 extern crate libc;
+#[macro_use]
+extern crate log;
 extern crate openssl;
+#[macro_use(quick_error)]
+extern crate quick_error;
 extern crate regex;
 extern crate rfc1751;
 extern crate rusqlite;
@@ -16,6 +17,8 @@ extern crate rustc_serialize;
 extern crate serde;
 extern crate serde_json;
 extern crate sodiumoxide;
+#[cfg(test)]
+extern crate tempdir;
 extern crate tempfile;
 extern crate url;
 

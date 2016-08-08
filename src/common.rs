@@ -108,32 +108,36 @@ pub fn check_db(conn: &rusqlite::Connection) -> Result<(), rusqlite::Error> {
 
 fn pragmas(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error> {
     // sqlite config that must be done on every connection
-    conn.execute_batch(
-        "PRAGMA foreign_keys=ON;
-         PRAGMA journal_mode=DELETE;
-         PRAGMA secure_delete=true;
+    let q = "
+        PRAGMA foreign_keys=ON;
+        PRAGMA journal_mode=DELETE;
+        PRAGMA secure_delete=true;
 
-          -- this is a (probably misguided) attempt to keep password data off of
-          -- disk at the expense of potentially crashing with OOM
-         PRAGMA temp_store=MEMORY;
-        ")
+        -- this is a (probably misguided) attempt to keep sensitive data off of
+        -- disk at the expense of potentially crashing with OOM
+        PRAGMA temp_store=MEMORY;
+    ";
+    conn.execute_batch(q)
 }
 
 fn create_common_schema(conn: &mut rusqlite::Connection)
                         -> Result<(), rusqlite::Error> {
-    conn.execute_batch(
-        "CREATE TABLE globals (
+    let q = "
+        CREATE TABLE globals (
              key PRIMARY KEY NOT NULL,
              value NOT NULL,
              encrypted BOOL NOT NULL,
              modified INT NOT NULL
-        );"
-    )
+        );
+    ";
+    conn.execute_batch(q)
 }
 
 pub fn default_ssl_context() -> Result<SslContext, SecretsError> {
     let mut ssl_context = try!(SslContext::new(SslMethod::Tlsv1));
     ssl_context.set_options(SSL_OP_NO_SSLV2 | SSL_OP_NO_SSLV3 | SSL_OP_NO_COMPRESSION);
+    // Since we control both the client and the server we should be able to be
+    // stricter about this. But OpenSSL doesn't really support the best ciphers
     try!(ssl_context.set_cipher_list("ALL!EXPORT!EXPORT40!EXPORT56!aNULL!LOW!RC4@STRENGTH"));
     Ok(ssl_context)
 }
@@ -240,10 +244,11 @@ pub trait SecretsContainer {
                                            value: &'a T)
                                            -> Result<(), SecretsError> {
         let conn = self.get_db();
-        try!(conn.execute(
-            "INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
-             VALUES(?, ?, ?, 0)",
-            &[&key_name, value, &UTC::now().timestamp()]));
+        let q = "
+            INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
+            VALUES(?, ?, ?, 0)
+        ";
+        try!(conn.execute(q, &[&key_name, value, &UTC::now().timestamp()]));
         Ok(())
     }
 
@@ -252,11 +257,13 @@ pub trait SecretsContainer {
                             -> Result<Vec<u8>, SecretsError> {
         let ciphertext: Vec<u8> = try!({
             let conn = self.get_db();
-            conn.query_row(
-                "SELECT value FROM globals WHERE key = ? AND \
-                 encrypted",
-                &[&key_name],
-                |row| row.get(0))
+            let q = "
+                SELECT value FROM globals
+                WHERE key = ? AND encrypted
+            ";
+            conn.query_row(q,
+                           &[&key_name],
+                           |row| row.get(0))
         });
         let password = self.get_password();
         let plaintext = try!(keys::decrypt_blob_with_password(&ciphertext,
@@ -274,10 +281,11 @@ pub trait SecretsContainer {
         });
 
         let db = self.get_db();
-        try!(db.execute(
-            "INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
-             VALUES(?, ?, ?, 1)",
-            &[&key_name, &ciphertext, &UTC::now().timestamp()]));
+        let q = "
+            INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
+            VALUES(?, ?, ?, 1);
+        ";
+        try!(db.execute(q, &[&key_name, &ciphertext, &UTC::now().timestamp()]));
         Ok(())
     }
 }

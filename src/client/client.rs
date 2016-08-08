@@ -357,9 +357,7 @@ impl SecretsClient {
     }
 
     /// Get a grant by its key, addressed to anyone
-    pub fn get_grant(&self,
-                     grant_name: &str)
-                     -> Result<Grant, SecretsError> {
+    pub fn get_grant(&self, grant_name: &str) -> Result<Grant, SecretsError> {
         let (service_name, username) = Grant::split_key(grant_name);
         let mut req = SecretsRequest::new(Method::Get, "/api/info");
         req.add_arg("grant", grant_name.to_string());
@@ -564,8 +562,8 @@ impl SecretsClient {
                  current_grantee_names.join(","));
         println!("New grantees:\n\t{}", new_grantee_names.join(","));
 
-        if *rotation_strategy != RotationStrategy::Copy
-                && !try!(utils::prompt_yn("does that look right? [y/n] ")) {
+        if *rotation_strategy != RotationStrategy::Copy &&
+           !try!(utils::prompt_yn("does that look right? [y/n] ")) {
             return Err(SecretsError::Authentication("refused"));
         }
 

@@ -69,8 +69,7 @@ mod tests {
     #[test]
     pub fn test_constant_time_compare() {
         let compare = |actual: &str, expected: &str| {
-            constant_time_compare(&actual.as_bytes(),
-                                  &expected.as_bytes())
+            constant_time_compare(actual.as_bytes(), expected.as_bytes())
         };
         assert_eq!(true, compare("abc", "abc"));
         assert_eq!(false, compare("abc", "ab"));
