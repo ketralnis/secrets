@@ -19,7 +19,7 @@ use serde_json::from_slice as json_from_slice;
 use serde_json::ser::to_string as json_to_string;
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
-use sodiumoxide::crypto::hash::sha256;
+use sodiumoxide::crypto::hash::sha512;
 
 use common::SecretsError;
 use keys::CryptoError;
@@ -308,8 +308,8 @@ impl PeerInfo {
         ret.extend_from_slice(&fingerprint_bytes);
         ret.extend_from_slice(&self.public_key.as_ref());
         ret.extend_from_slice(&self.public_sign.as_ref());
-        let ret = sha256::hash(ret.as_slice());
-        let ret = try!((&ret[..]).to_rfc1751());
+        let ret = sha512::hash(ret.as_slice());
+        let ret = try!((&ret[..16]).to_rfc1751());
         Ok(ret)
     }
 }
