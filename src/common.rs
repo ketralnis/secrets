@@ -2,7 +2,6 @@
 
 use std::io;
 use std::io::Cursor;
-use std::iter::IntoIterator;
 use std::path::Path;
 
 use chrono::UTC;
@@ -352,9 +351,9 @@ pub trait SecretsContainer {
     }
 }
 
-struct OwningQuery<'a, Itm: 'a> {
+pub struct OwningQuery<'a, Itm: 'a> {
     stmt: Statement<'a>,
-    mapper: Box<FnMut(&Row) -> Itm>,
+    mapper: Box<Fn(&Row) -> Itm>,
 }
 
 impl<'a, Itm: 'a> OwningQuery<'a, Itm> {
@@ -362,7 +361,7 @@ impl<'a, Itm: 'a> OwningQuery<'a, Itm> {
               q: &'static str,
               map: F)
               -> Result<Self, SecretsError>
-              where F: FnMut(&Row) -> Itm,
+              where F: Fn(&Row) -> Itm,
                     F: 'static
               {
         let stmt = try!(db.prepare(q));
@@ -371,42 +370,31 @@ impl<'a, Itm: 'a> OwningQuery<'a, Itm> {
             mapper: Box::new(map),
         })
     }
-}
 
-impl<'a, Itm: 'a> IntoIterator for &'a mut OwningQuery<'a, Itm> {    
-    type Item = Result<Itm, rusqlite::Error>;
-    type IntoIter = OwningIterator<'a, Itm>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let qat = self.stmt.query(&[]);
+    pub fn iter(&'a mut self) -> Result<OwningIterator<'a, Itm>, rusqlite::Error> {
+        let qat = try!(self.stmt.query(&[]));
         
-        OwningIterator { query: qat, mapper: &*self.mapper }
+        Ok(OwningIterator { query: qat, mapper: &*self.mapper })
     }
 }
 
-struct OwningIterator<'a, Itm: 'a> {
-    query: Result<Rows<'a>, rusqlite::Error>,
-    mapper: &'a (FnMut(&Row) -> Itm),
+pub struct OwningIterator<'a, Itm: 'a> {
+    query: Rows<'a>,
+    mapper: &'a (Fn(&Row) -> Itm),
 }
 
 impl<'a, Itm> Iterator for OwningIterator<'a, Itm> {
     type Item = Result<Itm, rusqlite::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match &self.query {
-            &Err(x) => Some(Err(x.clone())),
-            &Ok(q) => {
-                match q.next() {
-                    None => None,
-                    Some(Ok(x)) => {
-                        let mapped = (self.mapper)(&x);
-                        Some(Ok(mapped))
-                    }
-                    Some(Err(x)) => {
-                        self.query = Err(SecretsError::from(&x));
-                        Some(Err(SecretsError::from(x)))
-                    },
-                }
+        match self.query.next() {
+            None => None,
+            Some(Ok(x)) => {
+                let mapped = (self.mapper)(&x);
+                Some(Ok(mapped))
+            },
+            Some(Err(x)) => {
+                Some(Err(x))
             },
         }
     }

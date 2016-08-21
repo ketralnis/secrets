@@ -14,6 +14,7 @@ use sodiumoxide;
 
 use api::{Grant, JoinRequest};
 use client::client_cmd::PASSWORD_SOURCE_HELP;
+use common::SecretsContainer;
 use common::SecretsError;
 use password;
 use server::listener;
@@ -61,6 +62,8 @@ fn make_clap<'a, 'b>() -> App<'a, 'b> {
                 .required(true)))
         .subcommand(SubCommand::with_name("server-info")
             .about("show info about the server"))
+        .subcommand(SubCommand::with_name("server-logs")
+            .about("print out the server logs"))
         .subcommand(SubCommand::with_name("fire")
             .about("fire (disable) a user, succeeding only if they have no outstanding grants")
             .arg(Arg::with_name("firee")
@@ -118,6 +121,15 @@ pub fn main() {
         ("server-info", _) => {
             let server_info = instance.get_peer_info().unwrap();
             println!("{}", server_info.printable_report().unwrap());
+        }
+        ("server-logs", _) => {
+            let mut q1 = instance.get_logs();
+            let mut q2 = q1.unwrap();
+            let mut iter1 = q2.iter();
+            let mut iter2 = iter1.unwrap(); 
+            for log in iter2 {
+                println!("{:?}", log.unwrap());
+            }
         }
         ("accept-join", Some(subargs)) => {
             let filename = subargs.value_of("filename").unwrap();
