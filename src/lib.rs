@@ -1,3 +1,5 @@
+#![recursion_limit="100"]
+
 extern crate byteorder;
 extern crate chrono;
 extern crate clap;
@@ -21,6 +23,7 @@ extern crate sodiumoxide;
 extern crate tempdir;
 extern crate tempfile;
 extern crate url;
+extern crate uuid;
 
 mod common;
 mod getpass;

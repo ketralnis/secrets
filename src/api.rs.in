@@ -18,8 +18,9 @@ use rustc_serialize::hex::{ToHex, FromHex};
 use serde_json::from_slice as json_from_slice;
 use serde_json::ser::to_string as json_to_string;
 use sodiumoxide::crypto::box_;
-use sodiumoxide::crypto::sign;
 use sodiumoxide::crypto::hash::sha256;
+use sodiumoxide::crypto::sign;
+use uuid::Uuid;
 
 use common::SecretsError;
 use keys::CryptoError;
@@ -117,21 +118,21 @@ pub struct Grant {
 }
 
 impl Grant {
-    pub fn create(grantee: String,
-                  grantor: String,
-                  service_name: String,
-                  plaintext: &[u8],
-                  created: i64,
-                  from_key: &box_::SecretKey,
-                  to_key: &box_::PublicKey,
-                  from_sign: &sign::SecretKey)
-                  -> Result<Self, SecretsError> {
+    pub fn new(grantee: String,
+               grantor: String,
+               service_name: String,
+               plaintext: &[u8],
+               created: i64,
+               from_key: &box_::SecretKey,
+               to_key: &box_::PublicKey,
+               from_sign: &sign::SecretKey)
+               -> Result<Self, SecretsError> {
         let ciphertext = try!(keys::encrypt_to(plaintext, from_key, to_key));
-        let signable = Self::signable(&grantee,
-                                      &grantor,
-                                      &service_name,
-                                      &ciphertext,
-                                      created);
+        let signable = Grant::_signable(&grantee,
+                                        &grantor,
+                                        &service_name,
+                                        &ciphertext,
+                                        created);
         let signature = sign::sign_detached(&signable, &from_sign);
         let grant = Grant {
             grantee: grantee,
@@ -160,7 +161,7 @@ impl Grant {
         Ok(u)
     }
 
-    fn signable(grantee: &str,
+    fn _signable(grantee: &str,
                 grantor: &str,
                 service_name: &str,
                 ciphertext: &[u8],
@@ -178,24 +179,6 @@ impl Grant {
         ret.extend_from_slice(&format!("{}", created).as_bytes());
         ret.extend_from_slice(&b","[..]);
         ret
-    }
-
-    fn _signable(&self) -> Vec<u8> {
-        return Self::signable(&self.grantee,
-                              &self.grantor,
-                              &self.service_name,
-                              &self.ciphertext,
-                              self.created);
-    }
-
-    pub fn verify_signature(&self, grantor_public_sign: &sign::PublicKey) -> Result<(), CryptoError> {
-        let signable = self._signable();
-        if !sign::verify_detached(&self.signature,
-                                  &signable,
-                                  grantor_public_sign) {
-            return Err(CryptoError::CantDecrypt);
-        }
-        return Ok(());
     }
 
     pub fn decrypt(&self,
@@ -246,7 +229,103 @@ impl Grant {
             return Err("must contain ::".to_string())
         }
     }
+}
 
+impl Signable for Grant {
+    fn signable(&self) -> Vec<u8> {
+        return Grant::_signable(&self.grantee,
+                                &self.grantor,
+                                &self.service_name,
+                                &self.ciphertext,
+                                self.created);
+    }
+
+    fn get_signature(&self) -> &sign::Signature {
+        return &self.signature;
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogEntry {
+    pub uuid: Uuid,
+    pub timestamp: i64,
+    pub text: String,
+    pub signature: sign::Signature,
+}
+
+impl LogEntry {
+    pub fn new(text: String, timestamp: i64, from_sign: &sign::SecretKey)
+               -> Result<Self, SecretsError> {
+        let uuid = Uuid::new_v4();
+        let signable = Self::_signable(&text, timestamp, &uuid);
+        let signature = sign::sign_detached(&signable, from_sign);
+
+        Ok(LogEntry {
+            uuid: uuid,
+            text: text,
+            timestamp: timestamp,
+            signature: signature,
+        })
+    }
+
+    fn _signable(text: &str,
+                 timestamp: i64,
+                 uuid: &Uuid)
+                 -> Vec<u8> {
+        let mut ret: Vec<u8> = vec![];
+        ret.extend_from_slice(&text.as_bytes());
+        ret.extend_from_slice(&b","[..]);
+        ret.extend_from_slice(&format!("{}", timestamp).as_bytes());
+        ret.extend_from_slice(&b","[..]);
+        ret.extend_from_slice(uuid.as_bytes());
+        ret.extend_from_slice(&b","[..]);
+        ret
+    }
+
+    pub fn from_row(row: &rusqlite::Row) -> Result<Self, SecretsError> {
+        let sig: Vec<u8> = row.get("signature");
+        let signature = try!(sign::Signature::from_slice(&sig)
+            .ok_or(CryptoError::CantDecrypt));
+        let uuid: Vec<u8> = row.get("uuid");
+        let uuid: Uuid = try!(Uuid::from_bytes(&uuid));
+
+        let u = LogEntry {
+            text: row.get("text"),
+            timestamp: row.get("text"),
+            uuid: uuid,
+            signature: signature,
+        };
+        Ok(u)
+    }
+
+
+}
+
+impl Signable for LogEntry {
+    fn signable(&self) -> Vec<u8> {
+        Self::_signable(&self.text, self.timestamp, &self.uuid)
+    }
+
+    fn get_signature(&self) -> &sign::Signature {
+        &self.signature
+    }
+}
+
+pub trait Signable {
+    fn signable(&self) -> Vec<u8>;
+    fn get_signature(&self) -> &sign::Signature;
+
+    fn verify_signature(&self, grantor_public_sign: &sign::PublicKey) -> Result<(), CryptoError> {
+        let signable = self.signable();
+        let signature = self.get_signature();
+
+        if !sign::verify_detached(&signature,
+                                  &signable,
+                                  grantor_public_sign) {
+            return Err(CryptoError::CantDecrypt);
+        }
+        return Ok(());
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

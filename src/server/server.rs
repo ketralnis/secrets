@@ -5,7 +5,7 @@ use rusqlite;
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
 
-use api::{User, Service, Grant, JoinRequest, PeerInfo};
+use api::{User, Service, Grant, JoinRequest, PeerInfo, Signable};
 use common;
 use common::SecretsContainer;
 use common::SecretsError;
@@ -31,6 +31,8 @@ impl SecretsServer {
             password: password,
         };
         try!(server.create_and_store_keys(&cn));
+
+        try!(server.log(None, "created database".to_string()));
 
         Ok(server)
     }

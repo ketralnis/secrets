@@ -25,7 +25,7 @@ use sodiumoxide::crypto::sign;
 use url::form_urlencoded::Serializer as QueryStringSerializer;
 
 use api::{ApiResponse, PeerInfo, JoinRequest, Service, Grant,
-          ServiceCreateRequest, GrantRequest, User};
+          ServiceCreateRequest, GrantRequest, User, Signable};
 use common;
 use common::SecretsContainer;
 use common::SecretsError;
@@ -105,6 +105,8 @@ impl SecretsClient {
                                &server_info.public_key.as_ref()));
         try!(client.set_global("server_public_sign",
                                &server_info.public_sign.as_ref()));
+
+        try!(client.log(None, "created database".to_string()));
 
         Ok(client)
     }
@@ -310,14 +312,14 @@ impl SecretsClient {
 
         for grantee_name in grantee_names {
             if let Some(grantee) = grantee_map.get(&grantee_name) {
-                let grant = try!(Grant::create(grantee_name,
-                                               username.to_string(),
-                                               service_name.to_string(),
-                                               &plaintext,
-                                               now,
-                                               &private_key,
-                                               &grantee.public_key,
-                                               &private_sign));
+                let grant = try!(Grant::new(grantee_name,
+                                            username.to_string(),
+                                            service_name.to_string(),
+                                            &plaintext,
+                                            now,
+                                            &private_key,
+                                            &grantee.public_key,
+                                            &private_sign));
                 // make sure the signature checks out to catch sig issues
                 // earlier in the process
                 debug_assert!(grant.verify_signature(&public_sign).is_ok());

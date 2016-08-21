@@ -19,10 +19,14 @@ chmod 755 /root
 
 if ! which cargo; then
     cd /home/vagrant
-    curl -sf https://static.rust-lang.org/rustup.sh > rustup.sh
+    curl -sf https://sh.rustup.rs > rustup.sh
     chmod u+x ./rustup.sh
-    ./rustup.sh >rustup.log 2>&1
-    tail rustup.log
+    export CARGO_HOME=/usr/local
+    export RUSTUP_HOME=/usr/local
+    export RUSTUP_TOOLCHAIN=stable
+    ./rustup.sh -y # >rustup.log 2>&1
+    rustup default stable
+    # tail rustup.log
 fi
 
 # build and install

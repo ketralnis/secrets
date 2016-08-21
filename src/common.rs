@@ -2,6 +2,7 @@
 
 use std::io;
 use std::io::Cursor;
+use std::iter::IntoIterator;
 use std::path::Path;
 
 use chrono::UTC;
@@ -9,26 +10,28 @@ use hyper;
 use openssl::crypto::hash::Type as HashType;
 use openssl::crypto::pkey::PKey;
 use openssl::nid::Nid;
+use openssl::ssl::{SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
 use openssl::ssl::error::SslError;
 use openssl::ssl::SslContext;
 use openssl::ssl::SslMethod;
-use openssl::ssl::{SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
 use openssl::x509::extension::Extension::KeyUsage;
 use openssl::x509::extension::KeyUsageOption::DigitalSignature;
 use openssl::x509::X509;
 use openssl::x509::X509Generator;
 use rfc1751::ToRfc1751Error;
-use rusqlite::types::FromSql;
-use rusqlite::types::ToSql;
+use rusqlite::{Connection, Row, Rows, Statement};
+use rusqlite::types::{FromSql, ToSql};
 use rusqlite;
 use rustc_serialize::hex::{ToHex, FromHexError};
 use serde_json::Error as SerdeError;
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
 use url::ParseError;
+use uuid;
 
-use keys;
+use api::{LogEntry, Signable};
 use keys::Authable;
+use keys;
 
 quick_error! {
     #[derive(Debug)]
@@ -41,6 +44,7 @@ quick_error! {
         Io(err: io::Error) {from()}
         Json(err: SerdeError) {from()}
         Parse(err: ParseError) {from()}
+        Uuid(err: uuid::ParseError) {from()}
         ServerError(err: String) {} // server didn't like something the client did
         ServiceAlreadyExists(err: String) {}
         Sqlite(err: rusqlite::Error) {from()}
@@ -70,14 +74,14 @@ pub fn init_ssl_cert(cn: &str) -> Result<(Vec<u8>, Vec<u8>), SecretsError> {
 
 pub fn create_db<P: AsRef<Path>>
     (config_file: P)
-     -> Result<rusqlite::Connection, SecretsError> {
+     -> Result<Connection, SecretsError> {
     let conn = try!(_connect_db(config_file, true));
     Ok(conn)
 }
 
 pub fn connect_db<P: AsRef<Path>>
     (config_file: P)
-     -> Result<rusqlite::Connection, SecretsError> {
+     -> Result<Connection, SecretsError> {
     let conn = try!(_connect_db(config_file, false));
     try!(check_db(&conn));
     Ok(conn)
@@ -86,13 +90,13 @@ pub fn connect_db<P: AsRef<Path>>
 fn _connect_db<P: AsRef<Path>>
     (path: P,
      create: bool)
-     -> Result<rusqlite::Connection, rusqlite::Error> {
+     -> Result<Connection, rusqlite::Error> {
     let flags = if create {
         rusqlite::SQLITE_OPEN_READ_WRITE | rusqlite::SQLITE_OPEN_CREATE
     } else {
         rusqlite::SQLITE_OPEN_READ_WRITE
     };
-    let mut conn = try!(rusqlite::Connection::open_with_flags(path, flags));
+    let mut conn = try!(Connection::open_with_flags(path, flags));
     try!(pragmas(&mut conn));
     if create {
         try!(create_common_schema(&mut conn));
@@ -100,13 +104,13 @@ fn _connect_db<P: AsRef<Path>>
     Ok(conn)
 }
 
-pub fn check_db(conn: &rusqlite::Connection) -> Result<(), rusqlite::Error> {
+pub fn check_db(conn: &Connection) -> Result<(), rusqlite::Error> {
     // just do a query that is expected to succeed, so server health checks
     // can be helpful
     conn.query_row("SELECT key from globals LIMIT 1", &[], |_| ())
 }
 
-fn pragmas(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error> {
+fn pragmas(conn: &mut Connection) -> Result<(), rusqlite::Error> {
     // sqlite config that must be done on every connection
     let q = "
         PRAGMA foreign_keys=ON;
@@ -120,14 +124,23 @@ fn pragmas(conn: &mut rusqlite::Connection) -> Result<(), rusqlite::Error> {
     conn.execute_batch(q)
 }
 
-fn create_common_schema(conn: &mut rusqlite::Connection)
+fn create_common_schema(conn: &mut Connection)
                         -> Result<(), rusqlite::Error> {
     let q = "
         CREATE TABLE globals (
-             key PRIMARY KEY NOT NULL,
-             value NOT NULL,
-             encrypted BOOL NOT NULL,
-             modified INT NOT NULL
+            key PRIMARY KEY NOT NULL,
+            value NOT NULL,
+            encrypted BOOL NOT NULL,
+            modified INT NOT NULL
+        );
+
+        CREATE TABLE logs (
+            -- autoincrement so we can guarantee monotonic keys
+            rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+            uuid UNIQUE NOT NULL,
+            text TEXT NOT NULL,
+            timestamp INTEGER NOT NULL,
+            signature NOT NULL
         );
     ";
     conn.execute_batch(q)
@@ -143,12 +156,12 @@ pub fn default_ssl_context() -> Result<SslContext, SecretsError> {
 }
 
 pub trait SecretsContainer {
-    fn get_db(&self) -> &rusqlite::Connection;
+    fn get_db(&self) -> &Connection;
     fn get_password(&self) -> &str;
 
     fn check_db(&self) -> Result<(), SecretsError> {
-        let db = self.get_db();
-        try!(check_db(&db));
+        let conn = self.get_db();
+        try!(check_db(&conn));
         Ok(())
     }
 
@@ -271,7 +284,7 @@ pub trait SecretsContainer {
         Ok(plaintext)
     }
 
-    fn set_encrypted_global(&mut self,
+    fn set_encrypted_global(&self,
                             key_name: &str,
                             plaintext: &[u8])
                             -> Result<(), SecretsError> {
@@ -280,12 +293,121 @@ pub trait SecretsContainer {
             keys::encrypt_blob_with_password(&plaintext, password.as_bytes())
         });
 
-        let db = self.get_db();
+        let conn = self.get_db();
         let q = "
             INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
             VALUES(?, ?, ?, 1);
         ";
-        try!(db.execute(q, &[&key_name, &ciphertext, &UTC::now().timestamp()]));
+        try!(conn.execute(q, &[&key_name, &ciphertext, &UTC::now().timestamp()]));
         Ok(())
+    }
+
+    fn log(&self, trans: Option<&rusqlite::Transaction>, text: String) -> Result<i64, SecretsError> {
+        let le = {
+            let (_public_sign, private_sign) = try!(self.get_signs());
+            let now = UTC::now().timestamp();
+            let le = try!(LogEntry::new(text, now, &private_sign));
+            le
+        };
+        match trans {
+            Some(t) => {
+                Self::_log(t, le)
+            },
+            None => {
+                let conn = self.get_db();
+                Self::_log(&conn, le)
+            }
+        }
+    }
+
+    fn _log(trans: &Connection, le: LogEntry) -> Result<i64, SecretsError> {
+        let q = "
+            INSERT INTO logs(text, timestamp, uuid, signature)
+            VALUES(?,?,?,?)
+        ";
+        try!(trans.execute(q,
+                           &[&le.text,
+                             &le.timestamp,
+                             &le.uuid.as_bytes().to_vec(),
+                             &le.signature.as_ref()]));
+        let row_id = trans.last_insert_rowid();
+        Ok(row_id)
+    }
+
+    fn get_logs<'a>(&'a self) -> Result<OwningQuery<'a, Result<LogEntry, SecretsError>>, SecretsError> {
+        let conn = self.get_db();
+        let (public_sign, _private_sign) = try!(self.get_signs());
+        let q = "
+            SELECT text, timestamp, uuid, signature
+            FROM logs
+            ORDER BY rowid DESC
+        ";
+        let map = move |row: &Row| {
+            let le = try!(LogEntry::from_row(row));
+            try!(le.verify_signature(&public_sign));
+            Ok(le)
+        };
+        let oq = try!(OwningQuery::new(&conn, q, map)); 
+        Ok(oq)
+    }
+}
+
+struct OwningQuery<'a, Itm: 'a> {
+    stmt: Statement<'a>,
+    mapper: Box<FnMut(&Row) -> Itm>,
+}
+
+impl<'a, Itm: 'a> OwningQuery<'a, Itm> {
+    fn new<F>(db: &'a Connection,
+              q: &'static str,
+              map: F)
+              -> Result<Self, SecretsError>
+              where F: FnMut(&Row) -> Itm,
+                    F: 'static
+              {
+        let stmt = try!(db.prepare(q));
+        Ok(OwningQuery {
+            stmt: stmt,
+            mapper: Box::new(map),
+        })
+    }
+}
+
+impl<'a, Itm: 'a> IntoIterator for &'a mut OwningQuery<'a, Itm> {    
+    type Item = Result<Itm, rusqlite::Error>;
+    type IntoIter = OwningIterator<'a, Itm>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let qat = self.stmt.query(&[]);
+        
+        OwningIterator { query: qat, mapper: &*self.mapper }
+    }
+}
+
+struct OwningIterator<'a, Itm: 'a> {
+    query: Result<Rows<'a>, rusqlite::Error>,
+    mapper: &'a (FnMut(&Row) -> Itm),
+}
+
+impl<'a, Itm> Iterator for OwningIterator<'a, Itm> {
+    type Item = Result<Itm, rusqlite::Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match &self.query {
+            &Err(x) => Some(Err(x.clone())),
+            &Ok(q) => {
+                match q.next() {
+                    None => None,
+                    Some(Ok(x)) => {
+                        let mapped = (self.mapper)(&x);
+                        Some(Ok(mapped))
+                    }
+                    Some(Err(x)) => {
+                        self.query = Err(SecretsError::from(&x));
+                        Some(Err(SecretsError::from(x)))
+                    },
+                }
+            },
+        }
     }
 }

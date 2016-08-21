@@ -28,3 +28,4 @@ sodiumoxide = "0.0.12"
 tempdir = "0.3"
 tempfile = "2.1.4"
 url = "1.0"
+uuid = { version = "0.2", features = ["serde", "v4"] }
