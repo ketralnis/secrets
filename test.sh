@@ -124,9 +124,9 @@ $SERVER fire florence
 ! $CLIENT_FLORENCE check-server
 ! $CLIENT_FLORENCE get twitter2
 
-$SERVER server-log
-$CLIENT_david server-log
-$CLIENT_david client-log
+$SERVER server-logs
+$CLIENT_david server-logs
+$CLIENT_david client-logs
 
 echo 'success!'
 exit 0

@@ -314,7 +314,7 @@ pub trait SecretsContainer {
             },
             None => {
                 let conn = self.get_db();
-                Self::_log(&conn, le)
+                Self::_log(conn, le)
             }
         }
     }
@@ -371,7 +371,7 @@ impl<'a, Itm: 'a> OwningQuery<'a, Itm> {
         })
     }
 
-    pub fn iter(&'a mut self) -> Result<OwningIterator<'a, Itm>, rusqlite::Error> {
+    pub fn iter<'b>(&'b mut self) -> Result<OwningIterator<'b, Itm>, rusqlite::Error> {
         let qat = try!(self.stmt.query(&[]));
         
         Ok(OwningIterator { query: qat, mapper: &*self.mapper })

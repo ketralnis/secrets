@@ -123,10 +123,10 @@ pub fn main() {
             println!("{}", server_info.printable_report().unwrap());
         }
         ("server-logs", _) => {
-            let mut q1 = instance.get_logs();
+            let q1 = instance.get_logs();
             let mut q2 = q1.unwrap();
-            let mut iter1 = q2.iter();
-            let mut iter2 = iter1.unwrap(); 
+            let iter1 = q2.iter();
+            let iter2 = iter1.unwrap(); 
             for log in iter2 {
                 println!("{:?}", log.unwrap());
             }
