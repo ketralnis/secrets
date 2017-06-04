@@ -37,12 +37,12 @@ pub struct User {
 impl User {
     pub fn from_row(row: &rusqlite::Row) -> Result<Self, SecretsError> {
         let public_key: Vec<u8> = row.get("public_key");
-        let public_key = try!(box_::PublicKey::from_slice(&public_key.as_ref())
+        let public_key = try!(box_::PublicKey::from_slice(public_key.as_ref())
             .ok_or(CryptoError::CantDecrypt));
 
         let public_sign: Vec<u8> = row.get("public_sign");
         let public_sign =
-            try!(sign::PublicKey::from_slice(&public_sign.as_ref())
+            try!(sign::PublicKey::from_slice(public_sign.as_ref())
                 .ok_or(CryptoError::CantDecrypt));
 
         let u = User {
@@ -60,8 +60,8 @@ impl User {
         PeerInfo {
             cn: self.username.clone(),
             fingerprint: self.ssl_fingerprint.clone(),
-            public_key: self.public_key.clone(),
-            public_sign: self.public_sign.clone(),
+            public_key: self.public_key,
+            public_sign: self.public_sign,
         }
     }
 }
@@ -130,7 +130,7 @@ impl Grant {
                                       &service_name,
                                       &ciphertext,
                                       created);
-        let signature = sign::sign_detached(&signable, &from_sign);
+        let signature = sign::sign_detached(&signable, from_sign);
         let grant = Grant {
             grantee: grantee,
             grantor: grantor,
@@ -165,15 +165,15 @@ impl Grant {
                 created: i64)
                 -> Vec<u8> {
         let mut ret: Vec<u8> = vec![];
-        ret.extend_from_slice(&grantee.as_bytes());
+        ret.extend_from_slice(grantee.as_bytes());
         ret.extend_from_slice(&b","[..]);
-        ret.extend_from_slice(&grantor.as_bytes());
+        ret.extend_from_slice(grantor.as_bytes());
         ret.extend_from_slice(&b","[..]);
-        ret.extend_from_slice(&service_name.as_bytes());
+        ret.extend_from_slice(service_name.as_bytes());
         ret.extend_from_slice(&b","[..]);
         ret.extend_from_slice(ciphertext);
         ret.extend_from_slice(&b","[..]);
-        ret.extend_from_slice(&format!("{}", created).as_bytes());
+        ret.extend_from_slice(format!("{}", created).as_bytes());
         ret.extend_from_slice(&b","[..]);
         ret
     }
@@ -201,8 +201,8 @@ impl Grant {
                    grantor_private_key: &box_::SecretKey)
                    -> Result<Vec<u8>, CryptoError> {
         let decrypted = try!(keys::decrypt_from(&self.ciphertext,
-                                                &grantee_public_key,
-                                                &grantor_private_key));
+                                                grantee_public_key,
+                                                grantor_private_key));
         Ok(decrypted)
     }
 
@@ -302,10 +302,10 @@ impl PeerInfo {
     fn mnemonic(&self) -> Result<String, SecretsError> {
         let fingerprint_bytes = try!(self.fingerprint.from_hex());
         let mut ret = Vec::new();
-        ret.extend_from_slice(&self.cn.as_bytes());
+        ret.extend_from_slice(self.cn.as_bytes());
         ret.extend_from_slice(&fingerprint_bytes);
-        ret.extend_from_slice(&self.public_key.as_ref());
-        ret.extend_from_slice(&self.public_sign.as_ref());
+        ret.extend_from_slice(self.public_key.as_ref());
+        ret.extend_from_slice(self.public_sign.as_ref());
         let ret = sha256::hash(ret.as_slice());
         let ret = try!((&ret[..]).to_rfc1751());
         Ok(ret)
@@ -324,7 +324,7 @@ impl JoinRequest {
     pub fn to_pastable(&self) -> Result<String, SecretsError> {
         let as_json_string = try!(json_to_string(&self));
         let mut encoder = GzEncoder::new(Vec::new(), Compression::Best);
-        try!(encoder.write_all(&as_json_string.as_bytes()));
+        try!(encoder.write_all(as_json_string.as_bytes()));
         let compressed = try!(encoder.finish());
         let b64 = compressed.to_base64(STANDARD_BASE64_CONFIG);
         Ok(b64)

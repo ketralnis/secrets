@@ -210,7 +210,7 @@ pub fn decrypt_from(blob: &[u8],
     let mut ciphertext = vec![];
     try!(rdr.read_to_end(&mut ciphertext));
 
-    let plaintext = try!(box_::open(&ciphertext[..], &nonce, &from, &to)
+    let plaintext = try!(box_::open(&ciphertext[..], &nonce, from, to)
         .map_err(|_| CryptoError::CantDecrypt));
 
     Ok(plaintext)

@@ -54,7 +54,7 @@ impl ServerHandler {
 
         // ================ authentication required from here ================
 
-        let auth_user = try!(authenticate_request(&instance, &request));
+        let auth_user = try!(authenticate_request(instance, request));
 
         if url_matches(request, Method::Get, "/api/auth") {
             // this URL only checks that the client can authenticate. they
@@ -68,14 +68,14 @@ impl ServerHandler {
 
         if url_matches(request, Method::Get, "/api/info") {
             if let Some(unames) = query_params.get("user") {
-                for ref uname in unames {
+                for uname in unames {
                     let user = try!(instance.get_user(uname));
                     api.users.insert(user.username.clone(), user);
                 }
             }
 
             if let Some(service_names) = query_params.get("service") {
-                for ref service_name in service_names {
+                for service_name in service_names {
                     if try!(instance.service_exists(service_name)) {
                         let service = try!(instance.get_service(service_name));
                         api.services.insert(service.name.clone(), service);
@@ -84,7 +84,7 @@ impl ServerHandler {
             }
 
             if let Some(grant_names) = query_params.get("grant") {
-                for ref grant_name in grant_names {
+                for grant_name in grant_names {
                     let (service_name, grantee_name) =
                         Grant::split_key(grant_name);
 
@@ -139,11 +139,11 @@ impl ServerHandler {
                     // list all grants held by this person
 
                     // check that the user exists
-                    let grantee = try!(instance.get_user(&grantee_name));
+                    let grantee = try!(instance.get_user(grantee_name));
                     api.users.insert(grantee.username.clone(), grantee);
 
                     let grants = try!(
-                        instance.get_grants_for_grantee(&grantee_name));
+                        instance.get_grants_for_grantee(grantee_name));
                     for grant in grants {
                         let service =
                             try!(instance.get_service(&grant.service_name));
@@ -246,7 +246,7 @@ impl ServerHandler {
                 *response.status_mut() = StatusCode::BadRequest;
                 response.send(err.as_bytes())
             }
-            SecretsError::Authentication(ref err) => {
+            SecretsError::Authentication(err) => {
                 *response.status_mut() = StatusCode::Unauthorized;
                 response.send(err.as_bytes())
             }

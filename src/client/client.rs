@@ -453,7 +453,7 @@ impl SecretsClient {
         let mut req = SecretsRequest::new(Method::Get, "/api/info");
         req.add_arg("service", service_name.to_string());
         req.add_arg("grant", grant_key);
-        for ref grantee_name in &grantees {
+        for grantee_name in &grantees {
             req.add_arg("user", (*grantee_name).to_string());
         }
         let mut api_response = try!(self.server_request(req));
@@ -571,7 +571,7 @@ impl SecretsClient {
 
         let now = UTC::now().timestamp();
         let new_grants = try!(self._create_grants(plaintext,
-                                                  &service_name,
+                                                  service_name,
                                                   now,
                                                   new_grantee_names,
                                                   api_response.users));

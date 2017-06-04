@@ -144,7 +144,7 @@ pub trait SecretsContainer {
 
     fn check_db(&self) -> Result<(), SecretsError> {
         let db = self.get_db();
-        try!(check_db(&db));
+        try!(check_db(db));
         Ok(())
     }
 
@@ -270,7 +270,7 @@ pub trait SecretsContainer {
                             -> Result<(), SecretsError> {
         let ciphertext = try!({
             let password = self.get_password();
-            keys::encrypt_blob_with_password(&plaintext, password.as_bytes())
+            keys::encrypt_blob_with_password(plaintext, password.as_bytes())
         });
 
         let db = self.get_db();

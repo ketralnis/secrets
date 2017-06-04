@@ -225,7 +225,7 @@ impl SecretsServer {
             return Err(SecretsError::Authentication("disabled user can't grant"));
         }
 
-        for ref grant in &grants {
+        for grant in &grants {
             let grantee_user = try!(self.get_user(&grant.grantee));
             if grantee_user.disabled.is_some() {
                 return Err(SecretsError::Authentication("can't grant to \
