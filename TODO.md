@@ -15,6 +15,7 @@ These are things that we really shouldn't go to 1.0 without
   - crypto level
 * validation of usernames, service names, etc
 * prompts need labelling or we'll just ask them "password:" twice with no context
+* SSL cert revocation? e.g. OCSP
 
 # Bugs (some blockers, some not)
 
