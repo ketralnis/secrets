@@ -57,12 +57,12 @@ impl User {
     }
 
     pub fn to_peer_info(&self) -> PeerInfo {
-        return PeerInfo {
+        PeerInfo {
             cn: self.username.clone(),
             fingerprint: self.ssl_fingerprint.clone(),
             public_key: self.public_key.clone(),
             public_sign: self.public_sign.clone(),
-        };
+        }
     }
 }
 
@@ -139,7 +139,7 @@ impl Grant {
             created: created,
             signature: signature,
         };
-        return Ok(grant);
+        Ok(grant)
     }
 
     pub fn from_row(row: &rusqlite::Row) -> Result<Self, SecretsError> {
@@ -179,11 +179,11 @@ impl Grant {
     }
 
     fn _signable(&self) -> Vec<u8> {
-        return Self::signable(&self.grantee,
-                              &self.grantor,
-                              &self.service_name,
-                              &self.ciphertext,
-                              self.created);
+        Self::signable(&self.grantee,
+                       &self.grantor,
+                       &self.service_name,
+                       &self.ciphertext,
+                       self.created)
     }
 
     pub fn verify_signature(&self, grantor_public_sign: &sign::PublicKey) -> Result<(), CryptoError> {
@@ -193,7 +193,7 @@ impl Grant {
                                   grantor_public_sign) {
             return Err(CryptoError::CantDecrypt);
         }
-        return Ok(());
+        Ok(())
     }
 
     pub fn decrypt(&self,
@@ -203,45 +203,45 @@ impl Grant {
         let decrypted = try!(keys::decrypt_from(&self.ciphertext,
                                                 &grantee_public_key,
                                                 &grantor_private_key));
-        return Ok(decrypted);
+        Ok(decrypted)
     }
 
     pub fn key(&self) -> String {
-        return Self::key_for(&self.service_name, &self.grantee);
+        Self::key_for(&self.service_name, &self.grantee)
     }
 
     pub fn key_for(service_name: &str, grantee: &str) -> String {
-        return format!("{}::{}", service_name, grantee);
+        format!("{}::{}", service_name, grantee)
     }
 
     pub fn split_key(key: &str) -> (String, String) {
         let splitted: Vec<&str> = key.splitn(2, "::")
             .collect();
-        return (splitted[0].to_string(), splitted[1].to_string());
+        (splitted[0].to_string(), splitted[1].to_string())
     }
 
     pub fn printable_report(&self) -> String {
-        return format!("=== {} === \n\
-                       key:          {}\n\
-                       grantee:      {}\n\
-                       grantor:      {}\n\
-                       service name: {}\n\
-                       cipherlength: {}\n\
-                       created:      {}",
-                       self.key(),
-                       self.key(),
-                       self.grantee,
-                       self.grantor,
-                       self.service_name,
-                       self.ciphertext.len(),
-                       pretty_date(self.created));
+        format!("=== {} === \n\
+                key:          {}\n\
+                grantee:      {}\n\
+                grantor:      {}\n\
+                service name: {}\n\
+                cipherlength: {}\n\
+                created:      {}",
+                self.key(),
+                self.key(),
+                self.grantee,
+                self.grantor,
+                self.service_name,
+                self.ciphertext.len(),
+                pretty_date(self.created))
     }
 
     pub fn clap_validate_name(name: String) -> Result<(), String> {
         if (&name).contains("::") {
-            return Ok(())
+            Ok(())
         } else {
-            return Err("must contain ::".to_string())
+            Err("must contain ::".to_string())
         }
     }
 
@@ -285,18 +285,18 @@ impl PeerInfo {
         let public_sign_hex = self.public_sign.as_ref().to_hex();
         let mnemonic = try!(self.mnemonic());
 
-        return Ok(format!("=== {} ===\n\
-                          common name: {}\n\
-                          fingerprint: {}\n\
-                          public key:  {}\n\
-                          public sign: {}\n\
-                          mnemonic:    {}",
-                          self.cn,
-                          self.cn,
-                          fingerprint_hex,
-                          public_key_hex,
-                          public_sign_hex,
-                          mnemonic));
+        Ok(format!("=== {} ===\n\
+                   common name: {}\n\
+                   fingerprint: {}\n\
+                   public key:  {}\n\
+                   public sign: {}\n\
+                   mnemonic:    {}",
+                   self.cn,
+                   self.cn,
+                   fingerprint_hex,
+                   public_key_hex,
+                   public_sign_hex,
+                   mnemonic))
     }
 
     fn mnemonic(&self) -> Result<String, SecretsError> {
@@ -324,10 +324,10 @@ impl JoinRequest {
     pub fn to_pastable(&self) -> Result<String, SecretsError> {
         let as_json_string = try!(json_to_string(&self));
         let mut encoder = GzEncoder::new(Vec::new(), Compression::Best);
-        try!(encoder.write(&as_json_string.as_bytes()));
+        try!(encoder.write_all(&as_json_string.as_bytes()));
         let compressed = try!(encoder.finish());
         let b64 = compressed.to_base64(STANDARD_BASE64_CONFIG);
-        return Ok(b64);
+        Ok(b64)
     }
 
     pub fn from_pastable(data: &[u8]) -> Result<Self, SecretsError> {
@@ -339,7 +339,7 @@ impl JoinRequest {
         try!(decoder.read_to_end(&mut decompressed)
             .map_err(|_| CryptoError::CantDecrypt));
         let ret = try!(json_from_slice(&decompressed));
-        return Ok(ret);
+        Ok(ret)
     }
 }
 

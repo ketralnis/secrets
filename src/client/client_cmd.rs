@@ -240,16 +240,16 @@ pub fn main() {
         let client_report =
             client.get_peer_info().unwrap().printable_report().unwrap();
         io::stderr()
-            .write(format!("{}\n", client_report).as_bytes())
+            .write_all(format!("{}\n", client_report).as_bytes())
             .unwrap();
         let jr = client.join_request().unwrap();
         io::stderr()
-            .write(b"Send this to your friendly local secrets admin:\n")
+            .write_all(b"Send this to your friendly local secrets admin:\n")
             .unwrap();
         io::stderr().flush().unwrap();
         let pastable = jr.to_pastable().unwrap();
-        io::stdout().write(pastable.as_bytes()).unwrap();
-        io::stdout().write(b"\n").unwrap();
+        io::stdout().write_all(pastable.as_bytes()).unwrap();
+        io::stdout().write_all(b"\n").unwrap();
         exit(0);
     }
 
@@ -330,8 +330,8 @@ pub fn main() {
                 let decrypted_grant =
                     instance.get_decrypted_grant(&service_name).unwrap();
 
-                io::stdout().write(&decrypted_grant.plaintext).unwrap();
-                io::stdout().write(b"\n").unwrap();
+                io::stdout().write_all(&decrypted_grant.plaintext).unwrap();
+                io::stdout().write_all(b"\n").unwrap();
             }
         }
         ("grant", Some(subargs)) => {

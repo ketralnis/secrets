@@ -126,7 +126,7 @@ pub fn edit(chosen_editor: Option<String>,
 
     let mut tfile = try!(tempfile::NamedTempFile::new());
 
-    try!(tfile.write(initial_contents));
+    try!(tfile.write_all(initial_contents));
     try!(tfile.sync_all());
 
     let md = try!(tfile.metadata());

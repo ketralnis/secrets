@@ -32,7 +32,7 @@ pub fn prompt_yn(prompt: &str) -> io::Result<bool> {
     try!(stderr.flush());
 
     loop {
-        try!(stderr.write(prompt.as_bytes()));
+        try!(stderr.write_all(prompt.as_bytes()));
         try!(stderr.flush());
 
         buff.clear();

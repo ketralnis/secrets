@@ -157,7 +157,7 @@ impl ServerHandler {
                 }
             }
 
-            if let Some(_) = query_params.get("all-services") {
+            if query_params.get("all-services").is_some() {
                 for service in try!(instance.all_services()) {
                     api.services.insert(service.name.clone(), service);
                 }

@@ -169,7 +169,7 @@ impl SecretsServer {
                  WHERE service_name=?
                  ",
                 &[&service_name],
-                |r| Service::from_row(&r)));
+                |r| Service::from_row(r)));
         Ok(service)
     }
 
@@ -350,7 +350,7 @@ impl SecretsServer {
                                   grantee_name: &str)
                                   -> Result<Vec<Grant>, SecretsError> {
         let mut ret = vec![];
-        let _: User = try!(self.get_user(&grantee_name));
+        let _: User = try!(self.get_user(grantee_name));
         let mut stmt = try!(self.db.prepare(
             "SELECT service_name, grantee, grantor, ciphertext, signature,
                     created
@@ -437,7 +437,7 @@ impl SecretsServer {
              WHERE service_name = ? AND grantee = ?
             ",
             &[&service_name, &grantee_name],
-            |r| Grant::from_row(&r)));
+            |r| Grant::from_row(r)));
 
         // verify the signature so we don't return invalid grants
         let grantor = try!(self.get_user(&grant.grantor));

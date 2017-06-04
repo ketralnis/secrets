@@ -98,12 +98,12 @@ pub fn decrypt_blob_with_password(blob: &[u8],
     }
 
     let mut salt: Vec<u8> = vec![0; pwhash::SALTBYTES];
-    try!(rdr.read(&mut salt));
+    try!(rdr.read_exact(&mut salt));
     let salt = try!(pwhash::Salt::from_slice(&salt)
         .ok_or(CryptoError::CantDecrypt));
 
     let mut nonce: Vec<u8> = vec![0; secretbox::NONCEBYTES];
-    try!(rdr.read(&mut nonce));
+    try!(rdr.read_exact(&mut nonce));
     let nonce = try!(secretbox::Nonce::from_slice(&nonce)
         .ok_or(CryptoError::CantDecrypt));
 
@@ -154,7 +154,7 @@ pub fn check_auth_items_with_password(items: &Authable,
     }
 
     let mut salt: Vec<u8> = vec![0; pwhash::SALTBYTES];
-    try!(rdr.read(&mut salt));
+    try!(rdr.read_exact(&mut salt));
     let salt = try!(pwhash::Salt::from_slice(&salt)
         .ok_or(CryptoError::CantDecrypt));
     let key = try!(derive_auth_from_password(password, salt));
@@ -203,7 +203,7 @@ pub fn decrypt_from(blob: &[u8],
     }
 
     let mut nonce: Vec<u8> = vec![0; box_::NONCEBYTES];
-    try!(rdr.read(&mut nonce));
+    try!(rdr.read_exact(&mut nonce));
     let nonce = try!(box_::Nonce::from_slice(&nonce)
         .ok_or(CryptoError::CantDecrypt));
 
