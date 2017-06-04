@@ -316,7 +316,7 @@ fn authenticate_request(instance: &SecretsServer,
     };
     let client_pem = match ssl_info.peer_certificate() {
         None => {
-            return return Err(SecretsError::Authentication("no client cert"));
+            return Err(SecretsError::Authentication("no client cert"));
         }
         Some(c) => c,
     };

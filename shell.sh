@@ -41,4 +41,5 @@ echo "    " client: $client
 echo "    " david: $david
 echo "    " florence: $florence
 
+# don't `exec` here or the `trap` won't fire
 bash --noprofile --norc
