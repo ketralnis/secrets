@@ -14,7 +14,7 @@ clap = "2.24.2"
 env_logger = "0.4.3"
 flate2 = "0.2.19"
 hyper = {version="0.9.7", features=["openssl"]}
-libc = "0.2"
+libc = "0.2.23"
 log = "0.3.6"
 openssl = "0.7.13"
 quick-error = "1.1.0"
