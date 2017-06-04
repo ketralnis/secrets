@@ -37,7 +37,7 @@ pub struct User {
 }
 
 impl User {
-    pub fn from_row(row: rusqlite::Row) -> Result<Self, SecretsError> {
+    pub fn from_row(row: &rusqlite::Row) -> Result<Self, SecretsError> {
         let public_key: Vec<u8> = row.get("public_key");
         let public_key = try!(box_::PublicKey::from_slice(&public_key.as_ref())
             .ok_or(CryptoError::CantDecrypt));
