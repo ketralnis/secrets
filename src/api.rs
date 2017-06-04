@@ -1,8 +1,6 @@
 // API objects that are passed via HTTP, implemented with serde code generation
 // for convenience
 
-// I'm built by build.rs (specified in Cargo.toml)
-
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::io::{Read, Write};
