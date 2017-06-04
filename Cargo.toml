@@ -12,7 +12,7 @@ byteorder = "1.0.0"
 chrono = "0.3.1"
 clap = "2.24.2"
 env_logger = "0.4.3"
-flate2 = "0.2.14"
+flate2 = "0.2.19"
 hyper = {version="0.9.7", features=["openssl"]}
 libc = "0.2"
 log = "0.3.6"
