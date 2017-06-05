@@ -75,8 +75,8 @@ impl SecretsClient {
 
         let api_response: ApiResponse = try!(dejson_from_reader(response));
         let server_info = try!(api_response.server_info
-            .ok_or(SecretsError::ClientError("missing server info"
-                .to_string())));
+            .ok_or_else(|| {
+                SecretsError::ClientError("missing server info".to_string())}));
 
         let server_report = try!(server_info.printable_report());
         try!(io::stderr().write_all(server_report.as_bytes()));
@@ -338,7 +338,8 @@ impl SecretsClient {
 
         let user = try!(api_response.users
             .remove(username)
-            .ok_or(SecretsError::ClientError("user not found".to_string())));
+            .ok_or_else(|| {
+                SecretsError::ClientError("user not found".to_string())}));
         Ok(user)
     }
 
@@ -352,7 +353,8 @@ impl SecretsClient {
 
         let service = try!(api_response.services
             .remove(service_name)
-            .ok_or(SecretsError::ClientError("service not found".to_string())));
+            .ok_or_else(|| {
+                SecretsError::ClientError("service not found".to_string())}));
         Ok(service)
     }
 
@@ -369,17 +371,21 @@ impl SecretsClient {
         // just make sure the service exists
         try!(api_response.services
             .remove(&service_name)
-            .ok_or(SecretsError::ClientError("service not found".to_string())));
+            .ok_or_else(|| {
+                SecretsError::ClientError("service not found".to_string())}));
 
         let mut service_block = try!(api_response.grants
             .remove(&service_name)
-            .ok_or(SecretsError::ClientError("grant not found".to_string())));
+            .ok_or_else(|| {
+                SecretsError::ClientError("grant not found".to_string())}));
         let grant = try!(service_block.remove(&username)
-            .ok_or(SecretsError::ClientError("grant not found".to_string())));
+            .ok_or_else(|| {
+                SecretsError::ClientError("grant not found".to_string())}));
 
         let grantor = try!(api_response.users
             .remove(&grant.grantor)
-            .ok_or(SecretsError::ClientError("user not included".to_string())));
+            .ok_or_else(|| {
+                SecretsError::ClientError("user not included".to_string())}));
 
         try!(grant.verify_signature(&grantor.public_sign));
 
@@ -401,17 +407,21 @@ impl SecretsClient {
         // just make sure the service exists
         try!(api_response.services
             .remove(service_name)
-            .ok_or(SecretsError::ClientError("service not found".to_string())));
+            .ok_or_else(|| {
+                SecretsError::ClientError("service not found".to_string())}));
 
         let mut service_block = try!(api_response.grants
             .remove(service_name)
-            .ok_or(SecretsError::ClientError("grant not found".to_string())));
+            .ok_or_else(|| {
+                SecretsError::ClientError("grant not found".to_string())}));
         let grant = try!(service_block.remove(&username)
-            .ok_or(SecretsError::ClientError("grant not found".to_string())));
+            .ok_or_else(|| {
+                SecretsError::ClientError("grant not found".to_string())}));
 
         let grantor = try!(api_response.users
             .remove(&grant.grantor)
-            .ok_or(SecretsError::ClientError("user not included".to_string())));
+            .ok_or_else(|| {
+                SecretsError::ClientError("user not included".to_string())}));
 
         let decrypted = try!(self._decrypt_grant(grant, grantor));
 
@@ -460,16 +470,18 @@ impl SecretsClient {
 
         let mut service_block = try!(api_response.grants
             .remove(&service_name)
-            .ok_or(SecretsError::ClientError("grant not found".to_string())));
+            .ok_or_else(|| {
+                SecretsError::ClientError("grant not found".to_string())}));
         let grant = try!(service_block.remove(&username)
-            .ok_or(SecretsError::ClientError("grant not found".to_string())));
+            .ok_or_else(|| {
+                SecretsError::ClientError("grant not found".to_string())}));
 
         // we didn't ask for this, but the server will automatically add it in
         // because we asked for the grant
         let grantor = try!(api_response.users
                 .get(&grant.grantor)
-                .ok_or(SecretsError::ClientError("user not included"
-                    .to_string())))
+                .ok_or_else(|| {
+                    SecretsError::ClientError("user not included".to_string())}))
             .clone();
 
         let decrypted_grant = try!(self._decrypt_grant(grant, grantor));
@@ -524,10 +536,12 @@ impl SecretsClient {
         // make sure the service exists
         let _: Service = try!(api_response.services
             .remove(service_name)
-            .ok_or(SecretsError::ClientError("service not found".to_string())));
+            .ok_or_else(|| {
+                SecretsError::ClientError("service not found".to_string())}));
         let service_block = try!(api_response.grants
             .remove(service_name)
-            .ok_or(SecretsError::ClientError("grants not found".to_string())));
+            .ok_or_else(|| {
+                SecretsError::ClientError("grants not found".to_string())}));
 
         let current_grants = service_block;
 

@@ -33,8 +33,8 @@ quick_error! {
     }
 }
 
-pub fn validate_password_source(source: String) -> Result<(), String> {
-    parse_password_source(&source).map(|_| ())
+pub fn validate_password_source<T: AsRef<str>>(source: T) -> Result<(), String> {
+    parse_password_source(source.as_ref()).map(|_| ())
 }
 
 pub fn parse_password_source(source: &str) -> Result<PasswordSource, String> {
@@ -137,9 +137,9 @@ pub fn edit(chosen_editor: Option<String>,
     // use the shell to execute the editor
     let tfile_path = try!(tfile.path()
         .to_str()
-        .ok_or(PasswordError::Editor("couldn't de-str the tempfile \
-                                      name?"
-            .to_string())));
+        .ok_or_else(|| {
+            PasswordError::Editor("couldn't de-str the tempfile \
+                                   name?".to_string())}));
     let command = format!("{} {}", editor, tfile_path);
     let mut child = try!(Command::new("/bin/sh")
         .arg("-c")
