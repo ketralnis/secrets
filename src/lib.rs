@@ -1,7 +1,11 @@
-#[cfg(test)] extern crate tempdir;
-#[macro_use(quick_error)] extern crate quick_error;
-#[macro_use] extern crate log;
-#[macro_use] extern crate serde_derive;
+#[cfg(test)]
+extern crate tempdir;
+#[macro_use(quick_error)]
+extern crate quick_error;
+#[macro_use]
+extern crate log;
+#[macro_use]
+extern crate serde_derive;
 extern crate byteorder;
 extern crate chrono;
 extern crate clap;

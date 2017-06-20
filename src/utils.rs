@@ -8,10 +8,11 @@ pub fn validate_host(name: &str, value: &str) -> Result<(), String> {
     re_validator(name, r"[a-zA-Z0-9.-]+(:[0-9]{1,5})?", value)
 }
 
-pub fn re_validator(name: &str,
-                    re_expr: &'static str,
-                    value: &str)
-                    -> Result<(), String> {
+pub fn re_validator(
+    name: &str,
+    re_expr: &'static str,
+    value: &str,
+) -> Result<(), String> {
     let re = regex::Regex::new(re_expr).unwrap();
     if re.is_match(value) {
         Ok(())
@@ -28,15 +29,15 @@ pub fn prompt_yn(prompt: &str) -> io::Result<bool> {
 
     // mixing stdout/stderr output is always a mess, but the only time we really
     // do it is with prompts. flush it here so our callers don't have to
-    try!(stdout.flush());
-    try!(stderr.flush());
+    stdout.flush()?;
+    stderr.flush()?;
 
     loop {
-        try!(stderr.write_all(prompt.as_bytes()));
-        try!(stderr.flush());
+        stderr.write_all(prompt.as_bytes())?;
+        stderr.flush()?;
 
         buff.clear();
-        try!(stdin.read_line(&mut buff));
+        stdin.read_line(&mut buff)?;
 
         match buff.as_str().trim_right() {
             "Y" | "y" | "yes" => return Ok(true),
@@ -69,8 +70,7 @@ mod tests {
     #[test]
     pub fn test_constant_time_compare() {
         let compare = |actual: &str, expected: &str| {
-            constant_time_compare(&actual.as_bytes(),
-                                  &expected.as_bytes())
+            constant_time_compare(&actual.as_bytes(), &expected.as_bytes())
         };
         assert_eq!(true, compare("abc", "abc"));
         assert_eq!(false, compare("abc", "ab"));

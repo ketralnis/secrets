@@ -37,13 +37,12 @@ pub struct User {
 impl User {
     pub fn from_row(row: &rusqlite::Row) -> Result<Self, SecretsError> {
         let public_key: Vec<u8> = row.get("public_key");
-        let public_key = try!(box_::PublicKey::from_slice(public_key.as_ref())
-            .ok_or(CryptoError::CantDecrypt));
+        let public_key = box_::PublicKey::from_slice(public_key.as_ref())
+            .ok_or(CryptoError::CantDecrypt)?;
 
         let public_sign: Vec<u8> = row.get("public_sign");
-        let public_sign =
-            try!(sign::PublicKey::from_slice(public_sign.as_ref())
-                .ok_or(CryptoError::CantDecrypt));
+        let public_sign = sign::PublicKey::from_slice(public_sign.as_ref())
+            .ok_or(CryptoError::CantDecrypt)?;
 
         let u = User {
             username: row.get("username"),
@@ -88,19 +87,21 @@ impl Service {
     }
 
     pub fn printable_report(&self) -> String {
-        return format!("=== {} ===\n\
-                       name:        {}\n\
-                       created:     {}\n\
-                       modified:    {}\n\
-                       creator:     {}\n\
-                       modified by: {}\
-                       ",
-                       self.name,
-                       self.name,
-                       pretty_date(self.created),
-                       pretty_date(self.modified),
-                       self.creator,
-                       self.modified_by)
+        return format!(
+            "=== {} ===\n\
+             name:        {}\n\
+             created:     {}\n\
+             modified:    {}\n\
+             creator:     {}\n\
+             modified by: {}\
+             ",
+            self.name,
+            self.name,
+            pretty_date(self.created),
+            pretty_date(self.modified),
+            self.creator,
+            self.modified_by
+        );
     }
 }
 
@@ -115,21 +116,24 @@ pub struct Grant {
 }
 
 impl Grant {
-    pub fn create(grantee: String,
-                  grantor: String,
-                  service_name: String,
-                  plaintext: &[u8],
-                  created: i64,
-                  from_key: &box_::SecretKey,
-                  to_key: &box_::PublicKey,
-                  from_sign: &sign::SecretKey)
-                  -> Result<Self, SecretsError> {
-        let ciphertext = try!(keys::encrypt_to(plaintext, from_key, to_key));
-        let signable = Self::signable(&grantee,
-                                      &grantor,
-                                      &service_name,
-                                      &ciphertext,
-                                      created);
+    pub fn create(
+        grantee: String,
+        grantor: String,
+        service_name: String,
+        plaintext: &[u8],
+        created: i64,
+        from_key: &box_::SecretKey,
+        to_key: &box_::PublicKey,
+        from_sign: &sign::SecretKey,
+    ) -> Result<Self, SecretsError> {
+        let ciphertext = keys::encrypt_to(plaintext, from_key, to_key)?;
+        let signable = Self::signable(
+            &grantee,
+            &grantor,
+            &service_name,
+            &ciphertext,
+            created,
+        );
         let signature = sign::sign_detached(&signable, from_sign);
         let grant = Grant {
             grantee: grantee,
@@ -144,8 +148,8 @@ impl Grant {
 
     pub fn from_row(row: &rusqlite::Row) -> Result<Self, SecretsError> {
         let sig: Vec<u8> = row.get("signature");
-        let signature = try!(sign::Signature::from_slice(&sig)
-            .ok_or(CryptoError::CantDecrypt));
+        let signature = sign::Signature::from_slice(&sig)
+            .ok_or(CryptoError::CantDecrypt)?;
 
         let u = Grant {
             grantee: row.get("grantee"),
@@ -158,12 +162,13 @@ impl Grant {
         Ok(u)
     }
 
-    fn signable(grantee: &str,
-                grantor: &str,
-                service_name: &str,
-                ciphertext: &[u8],
-                created: i64)
-                -> Vec<u8> {
+    fn signable(
+        grantee: &str,
+        grantor: &str,
+        service_name: &str,
+        ciphertext: &[u8],
+        created: i64,
+    ) -> Vec<u8> {
         let mut ret: Vec<u8> = vec![];
         ret.extend_from_slice(grantee.as_bytes());
         ret.extend_from_slice(&b","[..]);
@@ -179,30 +184,40 @@ impl Grant {
     }
 
     fn _signable(&self) -> Vec<u8> {
-        Self::signable(&self.grantee,
-                       &self.grantor,
-                       &self.service_name,
-                       &self.ciphertext,
-                       self.created)
+        Self::signable(
+            &self.grantee,
+            &self.grantor,
+            &self.service_name,
+            &self.ciphertext,
+            self.created,
+        )
     }
 
-    pub fn verify_signature(&self, grantor_public_sign: &sign::PublicKey) -> Result<(), CryptoError> {
+    pub fn verify_signature(
+        &self,
+        grantor_public_sign: &sign::PublicKey,
+    ) -> Result<(), CryptoError> {
         let signable = self._signable();
-        if !sign::verify_detached(&self.signature,
-                                  &signable,
-                                  grantor_public_sign) {
+        if !sign::verify_detached(
+            &self.signature,
+            &signable,
+            grantor_public_sign,
+        ) {
             return Err(CryptoError::CantDecrypt);
         }
         Ok(())
     }
 
-    pub fn decrypt(&self,
-                   grantee_public_key: &box_::PublicKey,
-                   grantor_private_key: &box_::SecretKey)
-                   -> Result<Vec<u8>, CryptoError> {
-        let decrypted = try!(keys::decrypt_from(&self.ciphertext,
-                                                grantee_public_key,
-                                                grantor_private_key));
+    pub fn decrypt(
+        &self,
+        grantee_public_key: &box_::PublicKey,
+        grantor_private_key: &box_::SecretKey,
+    ) -> Result<Vec<u8>, CryptoError> {
+        let decrypted = keys::decrypt_from(
+            &self.ciphertext,
+            grantee_public_key,
+            grantor_private_key
+        )?;
         Ok(decrypted)
     }
 
@@ -215,26 +230,27 @@ impl Grant {
     }
 
     pub fn split_key(key: &str) -> (String, String) {
-        let splitted: Vec<&str> = key.splitn(2, "::")
-            .collect();
+        let splitted: Vec<&str> = key.splitn(2, "::").collect();
         (splitted[0].to_string(), splitted[1].to_string())
     }
 
     pub fn printable_report(&self) -> String {
-        format!("=== {} === \n\
-                key:          {}\n\
-                grantee:      {}\n\
-                grantor:      {}\n\
-                service name: {}\n\
-                cipherlength: {}\n\
-                created:      {}",
-                self.key(),
-                self.key(),
-                self.grantee,
-                self.grantor,
-                self.service_name,
-                self.ciphertext.len(),
-                pretty_date(self.created))
+        format!(
+            "=== {} === \n\
+             key:          {}\n\
+             grantee:      {}\n\
+             grantor:      {}\n\
+             service name: {}\n\
+             cipherlength: {}\n\
+             created:      {}",
+            self.key(),
+            self.key(),
+            self.grantee,
+            self.grantor,
+            self.service_name,
+            self.ciphertext.len(),
+            pretty_date(self.created)
+        )
     }
 
     pub fn clap_validate_name(name: String) -> Result<(), String> {
@@ -244,7 +260,6 @@ impl Grant {
             Err("must contain ::".to_string())
         }
     }
-
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -283,31 +298,33 @@ impl PeerInfo {
         let fingerprint_hex = &self.fingerprint;
         let public_key_hex = self.public_key.as_ref().to_hex();
         let public_sign_hex = self.public_sign.as_ref().to_hex();
-        let mnemonic = try!(self.mnemonic());
+        let mnemonic = self.mnemonic()?;
 
-        Ok(format!("=== {} ===\n\
-                   common name: {}\n\
-                   fingerprint: {}\n\
-                   public key:  {}\n\
-                   public sign: {}\n\
-                   mnemonic:    {}",
-                   self.cn,
-                   self.cn,
-                   fingerprint_hex,
-                   public_key_hex,
-                   public_sign_hex,
-                   mnemonic))
+        Ok(format!(
+            "=== {} ===\n\
+             common name: {}\n\
+             fingerprint: {}\n\
+             public key:  {}\n\
+             public sign: {}\n\
+             mnemonic:    {}",
+            self.cn,
+            self.cn,
+            fingerprint_hex,
+            public_key_hex,
+            public_sign_hex,
+            mnemonic
+        ))
     }
 
     fn mnemonic(&self) -> Result<String, SecretsError> {
-        let fingerprint_bytes = try!(self.fingerprint.from_hex());
+        let fingerprint_bytes = self.fingerprint.from_hex()?;
         let mut ret = Vec::new();
         ret.extend_from_slice(self.cn.as_bytes());
         ret.extend_from_slice(&fingerprint_bytes);
         ret.extend_from_slice(self.public_key.as_ref());
         ret.extend_from_slice(self.public_sign.as_ref());
         let ret = sha256::hash(ret.as_slice());
-        let ret = try!((&ret[..]).to_rfc1751());
+        let ret = (&ret[..]).to_rfc1751()?;
         Ok(ret)
     }
 }
@@ -322,23 +339,23 @@ pub struct JoinRequest {
 
 impl JoinRequest {
     pub fn to_pastable(&self) -> Result<String, SecretsError> {
-        let as_json_string = try!(json_to_string(&self));
+        let as_json_string = json_to_string(&self)?;
         let mut encoder = GzEncoder::new(Vec::new(), Compression::Best);
-        try!(encoder.write_all(as_json_string.as_bytes()));
-        let compressed = try!(encoder.finish());
+        encoder.write_all(as_json_string.as_bytes())?;
+        let compressed = encoder.finish()?;
         let b64 = compressed.to_base64(STANDARD_BASE64_CONFIG);
         Ok(b64)
     }
 
     pub fn from_pastable(data: &[u8]) -> Result<Self, SecretsError> {
-        let unb64d = try!(data.from_base64()
-            .map_err(|_| CryptoError::CantDecrypt));
+        let unb64d = data.from_base64().map_err(|_| CryptoError::CantDecrypt)?;
         let cursor = Cursor::new(unb64d);
-        let mut decoder = try!(GzDecoder::new(cursor));
+        let mut decoder = GzDecoder::new(cursor)?;
         let mut decompressed = Vec::new();
-        try!(decoder.read_to_end(&mut decompressed)
-            .map_err(|_| CryptoError::CantDecrypt));
-        let ret = try!(json_from_slice(&decompressed));
+        decoder
+            .read_to_end(&mut decompressed)
+            .map_err(|_| CryptoError::CantDecrypt)?;
+        let ret = json_from_slice(&decompressed)?;
         Ok(ret)
     }
 }

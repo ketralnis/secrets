@@ -17,52 +17,57 @@ quick_error! {
     }
 }
 
-pub fn derive_key_from_password(password: &[u8],
-                                salt: pwhash::Salt)
-                                -> Result<secretbox::Key, CryptoError> {
+pub fn derive_key_from_password(
+    password: &[u8],
+    salt: pwhash::Salt,
+) -> Result<secretbox::Key, CryptoError> {
     let mut k = secretbox::Key([0; secretbox::KEYBYTES]);
     let secretbox::Key(ref mut kb) = k;
 
     // the ops/mem limits can only be changed with a version increment in
     // encrypt_blob_with_password/decrypt_blob_with_password
-    let key = try!(pwhash::derive_key(kb,
-                                      password,
-                                      &salt,
-                                      pwhash::OPSLIMIT_INTERACTIVE,
-                                      pwhash::MEMLIMIT_INTERACTIVE)
-        .map_err(|_: ()| CryptoError::Unknown));
-    let key = try!(secretbox::Key::from_slice(key).ok_or(CryptoError::Unknown));
+    let key = pwhash::derive_key(
+        kb,
+        password,
+        &salt,
+        pwhash::OPSLIMIT_INTERACTIVE,
+        pwhash::MEMLIMIT_INTERACTIVE
+    ).map_err(|_: ()| CryptoError::Unknown)?;
+    let key = secretbox::Key::from_slice(key).ok_or(CryptoError::Unknown)?;
     Ok(key)
 }
 
 #[allow(dead_code)]
-pub fn derive_auth_from_password(password: &[u8],
-                                 salt: pwhash::Salt)
-                                 -> Result<auth::Key, CryptoError> {
+pub fn derive_auth_from_password(
+    password: &[u8],
+    salt: pwhash::Salt,
+) -> Result<auth::Key, CryptoError> {
     let mut k = auth::Key([0; auth::KEYBYTES]);
     let auth::Key(ref mut kb) = k;
 
     // the ops/mem limits can only be changed with a version increment in
     // auth_items_with_password/check_auth_items_with_password
-    let key = try!(pwhash::derive_key(kb,
-                                      password,
-                                      &salt,
-                                      pwhash::OPSLIMIT_INTERACTIVE,
-                                      pwhash::MEMLIMIT_INTERACTIVE)
-        .map_err(|_: ()| CryptoError::Unknown));
-    let key = try!(auth::Key::from_slice(key).ok_or(CryptoError::Unknown));
+    let key = pwhash::derive_key(
+        kb,
+        password,
+        &salt,
+        pwhash::OPSLIMIT_INTERACTIVE,
+        pwhash::MEMLIMIT_INTERACTIVE
+    ).map_err(|_: ()| CryptoError::Unknown)?;
+    let key = auth::Key::from_slice(key).ok_or(CryptoError::Unknown)?;
     Ok(key)
 }
 
 /// Encrypt a blob with a password, returning a blob that can be
 /// stored and decrypted again later with that password
-pub fn encrypt_blob_with_password(value: &[u8],
-                                  password: &[u8])
-                                  -> Result<Vec<u8>, CryptoError> {
+pub fn encrypt_blob_with_password(
+    value: &[u8],
+    password: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
     // derive the symetric encryption key from the password
     let nonce = secretbox::gen_nonce();
     let salt = pwhash::gen_salt();
-    let key = try!(derive_key_from_password(password, salt));
+    let key = derive_key_from_password(password, salt)?;
 
     // encrypt with that key
     let ciphertext = secretbox::seal(value, &nonce, &key);
@@ -71,7 +76,7 @@ pub fn encrypt_blob_with_password(value: &[u8],
     let mut ret = vec![];
 
     // encrypted blob version
-    try!(ret.write_u64::<NetworkEndian>(1));
+    ret.write_u64::<NetworkEndian>(1)?;
 
     // the sizes of these are defined by the cipher suite
     ret.extend_from_slice(&salt[..]);
@@ -87,48 +92,49 @@ pub fn encrypt_blob_with_password(value: &[u8],
 /// **Note** it is not safe to use this to decrypt blobs received from untrusted
 /// sources (as the work factors for the KDF are included unauthenticated in the
 /// blob, so an attacker could cause them to be arbitrarily expensive)
-pub fn decrypt_blob_with_password(blob: &[u8],
-                                  password: &[u8])
-                                  -> Result<Vec<u8>, CryptoError> {
+pub fn decrypt_blob_with_password(
+    blob: &[u8],
+    password: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
     let mut rdr = io::Cursor::new(blob);
 
-    let version = try!(rdr.read_u64::<NetworkEndian>());
+    let version = rdr.read_u64::<NetworkEndian>()?;
     if version != 1 {
         return Err(CryptoError::CantDecrypt);
     }
 
     let mut salt: Vec<u8> = vec![0; pwhash::SALTBYTES];
-    try!(rdr.read_exact(&mut salt));
-    let salt = try!(pwhash::Salt::from_slice(&salt)
-        .ok_or(CryptoError::CantDecrypt));
+    rdr.read_exact(&mut salt)?;
+    let salt = pwhash::Salt::from_slice(&salt)
+        .ok_or(CryptoError::CantDecrypt)?;
 
     let mut nonce: Vec<u8> = vec![0; secretbox::NONCEBYTES];
-    try!(rdr.read_exact(&mut nonce));
-    let nonce = try!(secretbox::Nonce::from_slice(&nonce)
-        .ok_or(CryptoError::CantDecrypt));
+    rdr.read_exact(&mut nonce)?;
+    let nonce = secretbox::Nonce::from_slice(&nonce)
+        .ok_or(CryptoError::CantDecrypt)?;
 
     let mut ciphertext: Vec<u8> = vec![];
-    try!(rdr.read_to_end(&mut ciphertext));
+    rdr.read_to_end(&mut ciphertext)?;
 
-    let derived_key = try!(derive_key_from_password(password, salt));
+    let derived_key = derive_key_from_password(password, salt)?;
 
-    let plaintext =
-        try!(secretbox::open(&ciphertext[..], &nonce, &derived_key)
-            .map_err(|_: ()| CryptoError::CantDecrypt));
+    let plaintext = secretbox::open(&ciphertext[..], &nonce, &derived_key)
+        .map_err(|_: ()| CryptoError::CantDecrypt)?;
     Ok(plaintext)
 }
 
 #[allow(dead_code)]
-pub fn auth_items_with_password(items: &Authable,
-                                password: &[u8])
-                                -> Result<Vec<u8>, CryptoError> {
+pub fn auth_items_with_password(
+    items: &Authable,
+    password: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
     let salt = pwhash::gen_salt();
-    let key = try!(derive_auth_from_password(password, salt));
+    let key = derive_auth_from_password(password, salt)?;
 
     let mut ret = vec![];
 
     // authed blob version
-    try!(ret.write_u64::<NetworkEndian>(1));
+    ret.write_u64::<NetworkEndian>(1)?;
     ret.extend_from_slice(&salt[..]);
 
     let blob = items.to_authable();
@@ -140,29 +146,30 @@ pub fn auth_items_with_password(items: &Authable,
 }
 
 #[allow(dead_code)]
-pub fn check_auth_items_with_password(items: &Authable,
-                                      expected_tag: &[u8],
-                                      password: &[u8])
-                                      -> Result<(), CryptoError> {
+pub fn check_auth_items_with_password(
+    items: &Authable,
+    expected_tag: &[u8],
+    password: &[u8],
+) -> Result<(), CryptoError> {
     let blob = items.to_authable();
 
     let mut rdr = io::Cursor::new(expected_tag);
 
-    let version = try!(rdr.read_u64::<NetworkEndian>());
+    let version = rdr.read_u64::<NetworkEndian>()?;
     if version != 1 {
         return Err(CryptoError::CantDecrypt);
     }
 
     let mut salt: Vec<u8> = vec![0; pwhash::SALTBYTES];
-    try!(rdr.read_exact(&mut salt));
-    let salt = try!(pwhash::Salt::from_slice(&salt)
-        .ok_or(CryptoError::CantDecrypt));
-    let key = try!(derive_auth_from_password(password, salt));
+    rdr.read_exact(&mut salt)?;
+    let salt = pwhash::Salt::from_slice(&salt)
+        .ok_or(CryptoError::CantDecrypt)?;
+    let key = derive_auth_from_password(password, salt)?;
 
     let mut tag_bytes = vec![];
-    try!(rdr.read_to_end(&mut tag_bytes));
-    let tag = try!(auth::Tag::from_slice(&tag_bytes)
-        .ok_or(CryptoError::CantDecrypt));
+    rdr.read_to_end(&mut tag_bytes)?;
+    let tag = auth::Tag::from_slice(&tag_bytes)
+        .ok_or(CryptoError::CantDecrypt)?;
 
     let authed = auth::verify(&tag, &blob, &key);
 
@@ -173,10 +180,11 @@ pub fn check_auth_items_with_password(items: &Authable,
     }
 }
 
-pub fn encrypt_to(plaintext: &[u8],
-                  from: &box_::SecretKey,
-                  to: &box_::PublicKey)
-                  -> Result<Vec<u8>, CryptoError> {
+pub fn encrypt_to(
+    plaintext: &[u8],
+    from: &box_::SecretKey,
+    to: &box_::PublicKey,
+) -> Result<Vec<u8>, CryptoError> {
     let nonce = box_::gen_nonce();
     let ciphertext = box_::seal(plaintext, &nonce, to, from);
 
@@ -184,34 +192,35 @@ pub fn encrypt_to(plaintext: &[u8],
     let mut ret = vec![];
 
     // encrypted blob version
-    try!(ret.write_u64::<NetworkEndian>(1));
+    ret.write_u64::<NetworkEndian>(1)?;
 
     ret.extend_from_slice(&nonce[..]);
     ret.extend_from_slice(&ciphertext[..]);
     Ok(ret)
 }
 
-pub fn decrypt_from(blob: &[u8],
-                    from: &box_::PublicKey,
-                    to: &box_::SecretKey)
-                    -> Result<Vec<u8>, CryptoError> {
+pub fn decrypt_from(
+    blob: &[u8],
+    from: &box_::PublicKey,
+    to: &box_::SecretKey,
+) -> Result<Vec<u8>, CryptoError> {
     let mut rdr = io::Cursor::new(blob);
 
-    let version = try!(rdr.read_u64::<NetworkEndian>());
+    let version = rdr.read_u64::<NetworkEndian>()?;
     if version != 1 {
         return Err(CryptoError::CantDecrypt);
     }
 
     let mut nonce: Vec<u8> = vec![0; box_::NONCEBYTES];
-    try!(rdr.read_exact(&mut nonce));
-    let nonce = try!(box_::Nonce::from_slice(&nonce)
-        .ok_or(CryptoError::CantDecrypt));
+    rdr.read_exact(&mut nonce)?;
+    let nonce = box_::Nonce::from_slice(&nonce)
+        .ok_or(CryptoError::CantDecrypt)?;
 
     let mut ciphertext = vec![];
-    try!(rdr.read_to_end(&mut ciphertext));
+    rdr.read_to_end(&mut ciphertext)?;
 
-    let plaintext = try!(box_::open(&ciphertext[..], &nonce, from, to)
-        .map_err(|_| CryptoError::CantDecrypt));
+    let plaintext = box_::open(&ciphertext[..], &nonce, from, to)
+        .map_err(|_| CryptoError::CantDecrypt)?;
 
     Ok(plaintext)
 }
@@ -306,9 +315,9 @@ mod tests {
         let wrong_password = b"not the right password";
         let encrypted_blob = encrypt_blob_with_password(blob, good_password)
             .unwrap();
-        let decrypted_blob = decrypt_blob_with_password(&encrypted_blob,
-                                                        wrong_password)
-            .unwrap();
+        let decrypted_blob =
+            decrypt_blob_with_password(&encrypted_blob, wrong_password)
+                .unwrap();
         assert_eq!(blob.to_vec(), decrypted_blob);
     }
 

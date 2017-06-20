@@ -32,34 +32,36 @@ struct ServerHandler {
 }
 
 impl ServerHandler {
-    fn _handle(&self,
-               instance: &mut SecretsServer,
-               mut request: &mut Request)
-               -> Result<(StatusCode, ApiResponse), SecretsError> {
-        try!(request.set_read_timeout(Some(Duration::new(2, 0))));
+    fn _handle(
+        &self,
+        instance: &mut SecretsServer,
+        mut request: &mut Request,
+    ) -> Result<(StatusCode, ApiResponse), SecretsError> {
+        request.set_read_timeout(Some(Duration::new(2, 0)))?;
 
         let mut api = ApiResponse::new();
 
         if url_matches(request, Method::Get, "/api/health") {
-            try!(instance.check_db());
+            instance.check_db()?;
             api.healthy = Some(true);
             return Ok((StatusCode::Ok, api));
         }
 
         if url_matches(request, Method::Get, "/api/server") {
-            let server_info = try!(instance.get_peer_info());
+            let server_info = instance.get_peer_info()?;
             api.server_info = Some(server_info);
             return Ok((StatusCode::Ok, api));
         }
 
         // ================ authentication required from here ================
 
-        let auth_user = try!(authenticate_request(instance, request));
+        let auth_user = authenticate_request(instance, request)?;
 
         if url_matches(request, Method::Get, "/api/auth") {
             // this URL only checks that the client can authenticate. they
             // don't really care about the result
-            api.users.insert(auth_user.username.clone(), auth_user.clone());
+            api.users
+                .insert(auth_user.username.clone(), auth_user.clone());
             return Ok((StatusCode::Ok, api));
         }
 
@@ -69,15 +71,15 @@ impl ServerHandler {
         if url_matches(request, Method::Get, "/api/info") {
             if let Some(unames) = query_params.get("user") {
                 for uname in unames {
-                    let user = try!(instance.get_user(uname));
+                    let user = instance.get_user(uname)?;
                     api.users.insert(user.username.clone(), user);
                 }
             }
 
             if let Some(service_names) = query_params.get("service") {
                 for service_name in service_names {
-                    if try!(instance.service_exists(service_name)) {
-                        let service = try!(instance.get_service(service_name));
+                    if instance.service_exists(service_name)? {
+                        let service = instance.get_service(service_name)?;
                         api.services.insert(service.name.clone(), service);
                     }
                 }
@@ -88,15 +90,15 @@ impl ServerHandler {
                     let (service_name, grantee_name) =
                         Grant::split_key(grant_name);
 
-                    let grant = try!(instance.get_grant(&service_name,
-                                                        &grantee_name));
+                    let grant = instance
+                        .get_grant(&service_name, &grantee_name)?;
 
                     // add in the dependent fields
-                    let grantee = try!(instance.get_user(&grantee_name));
+                    let grantee = instance.get_user(&grantee_name)?;
                     api.users.insert(grantee.username.clone(), grantee);
-                    let grantor = try!(instance.get_user(&grant.grantor));
+                    let grantor = instance.get_user(&grant.grantor)?;
                     api.users.insert(grantor.username.clone(), grantor);
-                    let service = try!(instance.get_service(&service_name));
+                    let service = instance.get_service(&service_name)?;
                     api.services.insert(service.name.clone(), service);
 
                     api.grants
@@ -107,7 +109,8 @@ impl ServerHandler {
             }
 
             if let Some(service_names) =
-                   query_params.get("grants-for-service") {
+                query_params.get("grants-for-service")
+            {
                 // they want a list of all Grants to the given Service. This is
                 // usually because they're about to rotate it, so we include the
                 // users as well. We don't include the grantors for those Grants
@@ -115,13 +118,12 @@ impl ServerHandler {
                 // bunch of other peoples' ciphertexts but they can follow up
                 // with another request if they want that
                 for service_name in service_names {
-                    let service = try!(instance.get_service(service_name));
+                    let service = instance.get_service(service_name)?;
                     api.services.insert(service.name.clone(), service);
 
-                    let grants =
-                        try!(instance.get_grants_for_service(service_name));
+                    let grants = instance.get_grants_for_service(service_name)?;
                     for grant in grants {
-                        let grantee = try!(instance.get_user(&grant.grantee));
+                        let grantee = instance.get_user(&grant.grantee)?;
 
                         api.grants
                             .entry(service_name.clone())
@@ -134,19 +136,19 @@ impl ServerHandler {
             }
 
             if let Some(grantee_names) =
-                   query_params.get("grants-for-grantee") {
+                query_params.get("grants-for-grantee")
+            {
                 for grantee_name in grantee_names {
                     // list all grants held by this person
 
                     // check that the user exists
-                    let grantee = try!(instance.get_user(grantee_name));
+                    let grantee = instance.get_user(grantee_name)?;
                     api.users.insert(grantee.username.clone(), grantee);
 
-                    let grants = try!(
-                        instance.get_grants_for_grantee(grantee_name));
+                    let grants = instance.get_grants_for_grantee(grantee_name)?;
                     for grant in grants {
-                        let service =
-                            try!(instance.get_service(&grant.service_name));
+                        let service = instance
+                            .get_service(&grant.service_name)?;
                         api.services.insert(service.name.clone(), service);
 
                         api.grants
@@ -158,7 +160,7 @@ impl ServerHandler {
             }
 
             if query_params.get("all-services").is_some() {
-                for service in try!(instance.all_services()) {
+                for service in instance.all_services()? {
                     api.services.insert(service.name.clone(), service);
                 }
             }
@@ -170,40 +172,38 @@ impl ServerHandler {
 
         if url_matches(request, Method::Post, "/api/create-service") {
             let create_req: ServiceCreateRequest =
-                try!(dejson_from_reader(&mut request));
+                dejson_from_reader(&mut request)?;
             let service = create_req.service;
             let grants = create_req.grants;
             let service_name = service.name.clone();
 
             // the server will do the authenticating
-            try!(instance.create_service(&auth_user, service, grants));
+            instance.create_service(&auth_user, service, grants)?;
 
-            let service = try!(instance.get_service(&service_name));
+            let service = instance.get_service(&service_name)?;
             api.services.insert(service_name, service);
 
             return Ok((StatusCode::Ok, api));
         }
 
         if url_matches(request, Method::Post, "/api/grant") {
-            let grant_req: GrantRequest =
-                try!(dejson_from_reader(&mut request));
+            let grant_req: GrantRequest = dejson_from_reader(&mut request)?;
             let service_name = grant_req.service_name;
             let grants = grant_req.grants;
 
             // the server will do the authenticating
-            try!(instance.add_grants(&auth_user, &service_name, grants));
+            instance.add_grants(&auth_user, &service_name, grants)?;
 
             return Ok((StatusCode::Ok, api));
         }
 
         if url_matches(request, Method::Post, "/api/rotate") {
-            let rotate_req: GrantRequest =
-                try!(dejson_from_reader(&mut request));
+            let rotate_req: GrantRequest = dejson_from_reader(&mut request)?;
             let service_name = rotate_req.service_name;
             let grants = rotate_req.grants;
 
             // the server will do the authenticating
-            try!(instance.rotate_service(&auth_user, &service_name, grants));
+            instance.rotate_service(&auth_user, &service_name, grants)?;
 
             return Ok((StatusCode::Ok, api));
         }
@@ -211,30 +211,32 @@ impl ServerHandler {
         Ok((StatusCode::NotFound, api))
     }
 
-    fn write_response(&self,
-                      status_code: StatusCode,
-                      api: ApiResponse,
-                      mut response: Response)
-                      -> Result<(), SecretsError> {
+    fn write_response(
+        &self,
+        status_code: StatusCode,
+        api: ApiResponse,
+        mut response: Response,
+    ) -> Result<(), SecretsError> {
         match json_to_vec(&api) {
             Ok(value_str) => {
                 *response.status_mut() = status_code;
-                try!(response.send(&value_str[..]));
+                response.send(&value_str[..])?;
                 Ok(())
             }
             Err(error) => {
                 error!("Error encoding JSON: {:?}", error);
                 *response.status_mut() = StatusCode::InternalServerError;
-                try!(response.start());
+                response.start()?;
                 Ok(())
             }
         }
     }
 
-    fn write_error(&self,
-                   error: &SecretsError,
-                   mut response: Response)
-                   -> Result<(), IOError> {
+    fn write_error(
+        &self,
+        error: &SecretsError,
+        mut response: Response,
+    ) -> Result<(), IOError> {
         // Secrets has two kinds of errors: A regular ApiResponse can have
         // `error` set on it in which case write_response will handle it.
         // Otherwise if an Error (in the rust keyword sense) is raised during
@@ -303,9 +305,10 @@ impl Handler for ServerHandler {
     }
 }
 
-fn authenticate_request(instance: &SecretsServer,
-                        request: &Request)
-                        -> Result<User, SecretsError> {
+fn authenticate_request(
+    instance: &SecretsServer,
+    request: &Request,
+) -> Result<User, SecretsError> {
     // all other requests require a client cert
     let ssl_info = match request.ssl::<SslStream<HttpStream>>() {
         None => {
@@ -320,19 +323,20 @@ fn authenticate_request(instance: &SecretsServer,
         }
         Some(c) => c,
     };
-    let (remote_cn, remote_fingerprint) =
-        match (client_pem.subject_name().text_by_nid(Nid::CN),
-               client_pem.fingerprint(HashType::SHA256)) {
-            (Some(cn), Some(fingerprint)) => {
-                (cn.to_string(), fingerprint.to_hex())
-            }
-            _ => {
-                return Err(SecretsError::Authentication("malformed client \
-                                                         cert"));
-            }
-        };
+    let (remote_cn, remote_fingerprint) = match (
+        client_pem.subject_name().text_by_nid(Nid::CN),
+        client_pem.fingerprint(HashType::SHA256),
+    ) {
+        (Some(cn), Some(fingerprint)) => (cn.to_string(), fingerprint.to_hex()),
+        _ => {
+            return Err(SecretsError::Authentication(
+                "malformed client \
+                 cert",
+            ));
+        }
+    };
 
-    let user = try!(instance.authenticate(&remote_cn, &remote_fingerprint));
+    let user = instance.authenticate(&remote_cn, &remote_fingerprint)?;
     Ok(user)
 }
 
@@ -343,32 +347,33 @@ fn pretend_verify(_preverify_ok: bool, _ctx: &X509StoreContext) -> bool {
 }
 
 fn make_ssl(instance: &mut SecretsServer) -> Result<Openssl, SecretsError> {
-    let mut ssl_context = try!(default_ssl_context());
+    let mut ssl_context = default_ssl_context()?;
     ssl_context.set_verify(SSL_VERIFY_PEER, Some(pretend_verify));
-    let (public_pem, private_pem) = try!(instance.get_pems());
-    try!(ssl_context.set_certificate(&public_pem));
-    try!(ssl_context.set_private_key(&private_pem));
-    try!(ssl_context.check_private_key());
+    let (public_pem, private_pem) = instance.get_pems()?;
+    ssl_context.set_certificate(&public_pem)?;
+    ssl_context.set_private_key(&private_pem)?;
+    ssl_context.check_private_key()?;
     let ssl = Openssl { context: Arc::new(ssl_context) };
     Ok(ssl)
 }
 
-pub fn listen(mut instance: SecretsServer,
-              listen: &str)
-              -> Result<(), SecretsError> {
-    let ssl = try!(make_ssl(&mut instance));
-    let hyper_server = try!(HyperServer::https(listen, ssl));
+pub fn listen(
+    mut instance: SecretsServer,
+    listen: &str,
+) -> Result<(), SecretsError> {
+    let ssl = make_ssl(&mut instance)?;
+    let hyper_server = HyperServer::https(listen, ssl)?;
     let mutexed_instance = Arc::new(Mutex::new(instance));
     let server_handler = ServerHandler { instance: mutexed_instance };
-    try!(hyper_server.handle(server_handler));
+    hyper_server.handle(server_handler)?;
     info!("terminating (hyper_server.handle returned)");
     Ok(())
 }
 
 fn url_matches(request: &Request, method: Method, prefix: &str) -> bool {
     match request.uri {
-        RequestUri::AbsolutePath(ref x) if x.starts_with(prefix) &&
-                                           request.method == method => true,
+        RequestUri::AbsolutePath(ref x)
+            if x.starts_with(prefix) && request.method == method => true,
         _ => false,
     }
 }

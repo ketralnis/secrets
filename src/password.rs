@@ -33,7 +33,9 @@ quick_error! {
     }
 }
 
-pub fn validate_password_source<T: AsRef<str>>(source: T) -> Result<(), String> {
+pub fn validate_password_source<T: AsRef<str>>(
+    source: T,
+) -> Result<(), String> {
     parse_password_source(source.as_ref()).map(|_| ())
 }
 
@@ -57,7 +59,7 @@ pub fn parse_password_source(source: &str) -> Result<PasswordSource, String> {
         Ok(PasswordSource::File(rest()))
     } else if source.starts_with("fd:") {
         let fd_str = rest();
-        let fd = try!(fd_str.parse::<i32>().map_err(|_| "not a number"));
+        let fd = fd_str.parse::<i32>().map_err(|_| "not a number")?;
         Ok(PasswordSource::Fd(fd))
     } else if source == "edit" {
         Ok(PasswordSource::Edit(None))
@@ -70,48 +72,51 @@ pub fn parse_password_source(source: &str) -> Result<PasswordSource, String> {
     }
 }
 
-pub fn evaluate_password_source(source: PasswordSource, prompt: &'static str)
-                                -> Result<String, PasswordError> {
+pub fn evaluate_password_source(
+    source: PasswordSource,
+    prompt: &'static str,
+) -> Result<String, PasswordError> {
     match source {
         PasswordSource::Password(x) => Ok(x),
         PasswordSource::Env(key) => {
-            let value = try!(env::var(key));
+            let value = env::var(key)?;
             Ok(value)
         }
         PasswordSource::File(fname) => {
-            let mut f = try!(File::open(fname));
+            let mut f = File::open(fname)?;
             let mut s = String::new();
-            try!(f.read_to_string(&mut s));
+            f.read_to_string(&mut s)?;
             Ok(s)
         }
         PasswordSource::Stdin => {
             let mut f = io::stdin();
             let mut s = String::new();
-            try!(f.read_to_string(&mut s));
+            f.read_to_string(&mut s)?;
             Ok(s)
         }
         PasswordSource::Fd(fd) => {
             let mut f = unsafe { File::from_raw_fd(fd) };
             let mut s = String::new();
-            try!(f.read_to_string(&mut s));
+            f.read_to_string(&mut s)?;
             Ok(s)
         }
         PasswordSource::Prompt => {
             let val = getpass::get_pass(prompt);
-            let password = try!(String::from_utf8(val));
+            let password = String::from_utf8(val)?;
             Ok(password)
         }
         PasswordSource::Edit(editor) => {
-            let val = try!(edit(editor, &b""[..]));
-            let password = try!(String::from_utf8(val));
+            let val = edit(editor, &b""[..])?;
+            let password = String::from_utf8(val)?;
             Ok(password)
         }
     }
 }
 
-pub fn edit(chosen_editor: Option<String>,
-            initial_contents: &[u8])
-            -> Result<Vec<u8>, PasswordError> {
+pub fn edit(
+    chosen_editor: Option<String>,
+    initial_contents: &[u8],
+) -> Result<Vec<u8>, PasswordError> {
     let editor = if chosen_editor.is_some() {
         chosen_editor.unwrap()
     } else if env::var("VISUAL").is_ok() {
@@ -119,44 +124,46 @@ pub fn edit(chosen_editor: Option<String>,
     } else if env::var("EDITOR").is_ok() {
         env::var("EDITOR").unwrap()
     } else {
-        return Err(PasswordError::Editor("editor not specified and \
-                                              $VISUAL/$EDITOR unset"
-            .to_string()));
+        return Err(PasswordError::Editor(
+            "editor not specified and \
+             $VISUAL/$EDITOR unset"
+                .to_string(),
+        ));
     };
 
-    let mut tfile = try!(tempfile::NamedTempFile::new());
+    let mut tfile = tempfile::NamedTempFile::new()?;
 
-    try!(tfile.write_all(initial_contents));
-    try!(tfile.sync_all());
+    tfile.write_all(initial_contents)?;
+    tfile.sync_all()?;
 
-    let md = try!(tfile.metadata());
+    let md = tfile.metadata()?;
     let mut permissions = md.permissions();
     permissions.set_mode(0o600);
-    try!(fs::set_permissions(tfile.path(), permissions));
+    fs::set_permissions(tfile.path(), permissions)?;
 
     // use the shell to execute the editor
-    let tfile_path = try!(tfile.path()
-        .to_str()
-        .ok_or_else(|| {
-            PasswordError::Editor("couldn't de-str the tempfile \
-                                   name?".to_string())}));
+    let tfile_path = tfile.path().to_str().ok_or_else(|| {
+        PasswordError::Editor(
+            "couldn't de-str the tempfile \
+             name?"
+                .to_string(),
+        )
+    })?;
     let command = format!("{} {}", editor, tfile_path);
-    let mut child = try!(Command::new("/bin/sh")
-        .arg("-c")
-        .arg(command)
-        .spawn());
+    let mut child = Command::new("/bin/sh").arg("-c").arg(command).spawn()?;
     debug!("spawned editor to PID {}", child.id());
 
-    let ecode = try!(child.wait());
+    let ecode = child.wait()?;
     debug!("editor returned with {:?}", ecode.code());
 
     if !ecode.success() {
-        return Err(PasswordError::Editor(format!("editor failed with {:?}",
-                                                 ecode.code())));
+        return Err(PasswordError::Editor(
+            format!("editor failed with {:?}", ecode.code()),
+        ));
     }
-    let mut reread = try!(File::open(tfile.path()));
+    let mut reread = File::open(tfile.path())?;
     let mut inputted: Vec<u8> = Vec::new();
-    try!(reread.read_to_end(&mut inputted));
+    reread.read_to_end(&mut inputted)?;
 
     if inputted[inputted.len() - 1] == b'\n' {
         // editors add a newline to the end which the user probably

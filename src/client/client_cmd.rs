@@ -17,12 +17,12 @@ use utils;
 // TODO this renders like crap
 // TODO move this
 pub const PASSWORD_SOURCE_HELP: &'static str = "\
-    Where to get the master password. Valid formats:\n\
-    \tpass:password (a literal password)\n\
-    \tenv:VARIABLE (an environment variable)\n\
-    \tfile:filename (read from a file; beware of newlines!)\n\
-    \tfd:number (read from a file descriptor)\n\
-    \tprompt (you will be prompted)";
+                                                Where to get the master password. Valid formats:\n\
+                                                \tpass:password (a literal password)\n\
+                                                \tenv:VARIABLE (an environment variable)\n\
+                                                \tfile:filename (read from a file; beware of newlines!)\n\
+                                                \tfd:number (read from a file descriptor)\n\
+                                                \tprompt (you will be prompted)";
 
 fn make_clap<'a, 'b>() -> App<'a, 'b> {
     App::new("secrets-client")
@@ -265,7 +265,8 @@ pub fn main() {
         ("create", Some(subargs)) => {
             let service_name = subargs.value_of("service_name").unwrap();
             let grantees: Vec<String> = if subargs.is_present("grant") {
-                subargs.values_of("grant")
+                subargs
+                    .values_of("grant")
                     .unwrap()
                     .map(|w| w.to_owned())
                     .collect()
@@ -275,12 +276,14 @@ pub fn main() {
             let secret_source = subargs.value_of("source").unwrap();
             let secret_source = password::parse_password_source(secret_source)
                 .unwrap();
-            let secret_value =
-                password::evaluate_password_source(secret_source, "secret data").unwrap();
+            let secret_value = password::evaluate_password_source(
+                secret_source,
+                "secret data",
+            ).unwrap();
             let secret_value = secret_value.as_bytes().to_owned();
-            instance.create_service(service_name.to_owned(),
-                                    secret_value,
-                                    grantees).unwrap()
+            instance
+                .create_service(service_name.to_owned(), secret_value, grantees)
+                .unwrap()
         }
         ("client-info", Some(_)) => {
             let client_info = instance.get_peer_info().unwrap();
@@ -291,7 +294,8 @@ pub fn main() {
             println!("{}", server_info.printable_report().unwrap());
         }
         ("user", Some(subargs)) => {
-            let usernames: Vec<String> = subargs.values_of("username")
+            let usernames: Vec<String> = subargs
+                .values_of("username")
                 .unwrap()
                 .map(|w| w.to_owned())
                 .collect();
@@ -302,7 +306,8 @@ pub fn main() {
             }
         }
         ("grant-info", Some(subargs)) => {
-            let grant_names: Vec<String> = subargs.values_of("grant_name")
+            let grant_names: Vec<String> = subargs
+                .values_of("grant_name")
                 .unwrap()
                 .map(|w| w.to_owned())
                 .collect();
@@ -312,7 +317,8 @@ pub fn main() {
             }
         }
         ("info", Some(subargs)) => {
-            let service_names: Vec<String> = subargs.values_of("service_name")
+            let service_names: Vec<String> = subargs
+                .values_of("service_name")
                 .unwrap()
                 .map(|w| w.to_owned())
                 .collect();
@@ -322,7 +328,8 @@ pub fn main() {
             }
         }
         ("get", Some(subargs)) => {
-            let service_names: Vec<String> = subargs.values_of("service_name")
+            let service_names: Vec<String> = subargs
+                .values_of("service_name")
                 .unwrap()
                 .map(|s| s.to_owned())
                 .collect();
@@ -337,7 +344,8 @@ pub fn main() {
         ("grant", Some(subargs)) => {
             let service_name: String =
                 subargs.value_of("service_name").unwrap().to_string();
-            let grantees: Vec<String> = subargs.values_of("grantee")
+            let grantees: Vec<String> = subargs
+                .values_of("grantee")
                 .unwrap()
                 .map(|s| s.to_owned())
                 .collect();
@@ -348,37 +356,43 @@ pub fn main() {
             // we can theoretically rotate multiple services at once, as long as
             // we hold a grant to all of them and they can all share the same
             // rotation strategy and value
-            let service_names: Vec<String> = subargs.values_of("service_name")
+            let service_names: Vec<String> = subargs
+                .values_of("service_name")
                 .unwrap()
                 .map(|s| s.to_owned())
                 .collect();
 
-            let rotation_stategy =
-                if !subargs.is_present("rotation strategy") ||
-                   subargs.is_present("copy") {
-                    client::RotationStrategy::Copy
-                } else if let Some(whos) = subargs.values_of("withhold") {
-                    let whos = whos.map(|w| w.to_owned()).collect();
-                    client::RotationStrategy::Withhold(whos)
-                } else if let Some(whos) = subargs.values_of("grant") {
-                    let whos = whos.map(|w| w.to_owned()).collect();
-                    client::RotationStrategy::Only(whos)
-                } else {
-                    unreachable!()
-                };
+            let rotation_stategy = if !subargs
+                .is_present("rotation strategy") ||
+                subargs.is_present("copy")
+            {
+                client::RotationStrategy::Copy
+            } else if let Some(whos) = subargs.values_of("withhold") {
+                let whos = whos.map(|w| w.to_owned()).collect();
+                client::RotationStrategy::Withhold(whos)
+            } else if let Some(whos) = subargs.values_of("grant") {
+                let whos = whos.map(|w| w.to_owned()).collect();
+                client::RotationStrategy::Only(whos)
+            } else {
+                unreachable!()
+            };
 
             let secret_source = subargs.value_of("source").unwrap();
-            let secret_source =
-                password::parse_password_source(secret_source).unwrap();
-            let secret_value =
-                password::evaluate_password_source(secret_source,
-                                                   "secret value").unwrap();
+            let secret_source = password::parse_password_source(secret_source)
+                .unwrap();
+            let secret_value = password::evaluate_password_source(
+                secret_source,
+                "secret value",
+            ).unwrap();
             let secret_value = secret_value.as_bytes().to_owned();
 
             for service_name in service_names {
-                instance.rotate_service(&service_name,
-                                        &rotation_stategy,
-                                        secret_value.clone())
+                instance
+                    .rotate_service(
+                        &service_name,
+                        &rotation_stategy,
+                        secret_value.clone(),
+                    )
                     .unwrap();
             }
         }
@@ -388,20 +402,23 @@ pub fn main() {
                 for service in instance.all_services().unwrap() {
                     println!("{}", service.name);
                 }
-            } else if subargs.is_present("mine") || subargs.is_present("grantee") {
+            } else if subargs.is_present("mine") ||
+                       subargs.is_present("grantee")
+            {
                 // list all services that a given user holds a grant for
                 let grantee_names = if subargs.is_present("mine") {
                     vec![instance.username().unwrap()]
                 } else if let Some(grantee_names) =
-                                           subargs.values_of("grantee") {
+                    subargs.values_of("grantee")
+                {
                     grantee_names.map(|s| s.to_owned()).collect()
                 } else {
                     unreachable!()
                 };
 
                 for grantee_name in &grantee_names {
-                    let grants = instance.grants_for_grantee(grantee_name)
-                        .unwrap();
+                    let grants =
+                        instance.grants_for_grantee(grantee_name).unwrap();
                     for grant in grants {
                         if grantee_names.len() == 1 {
                             println!("{}", grant.service_name);
@@ -415,7 +432,8 @@ pub fn main() {
             }
         }
         ("grants", Some(subargs)) => {
-            let service_names: Vec<String> = subargs.values_of("service_name")
+            let service_names: Vec<String> = subargs
+                .values_of("service_name")
                 .unwrap()
                 .map(|s| s.to_owned())
                 .collect();
@@ -433,15 +451,18 @@ pub fn main() {
         ("edit", Some(subargs)) => {
             let service_name =
                 subargs.value_of("service_name").unwrap().to_string();
-            let decrypted_grant = instance.get_decrypted_grant(&service_name)
-                .unwrap();
+            let decrypted_grant =
+                instance.get_decrypted_grant(&service_name).unwrap();
             let editor = subargs.value_of("editor").map(|s| s.to_owned());
             let plaintext = decrypted_grant.plaintext;
             let new_value = password::edit(editor, &plaintext).unwrap();
             if !utils::constant_time_compare(&plaintext, &new_value) {
-                instance.rotate_service(&service_name,
-                                    &client::RotationStrategy::Copy,
-                                    new_value)
+                instance
+                    .rotate_service(
+                        &service_name,
+                        &client::RotationStrategy::Copy,
+                        new_value,
+                    )
                     .unwrap();
             }
         }
