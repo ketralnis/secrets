@@ -10,6 +10,7 @@ serde_codegen = "0.7.14"
 byteorder = "1.0.0"
 chrono = "0.4"
 clap = "2.32.0"
+dirs = "1.0.2"
 env_logger = "0.4.3"
 flate2 = "0.2.19"
 hyper = {version="0.9.7", features=["openssl"]}

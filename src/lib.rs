@@ -9,6 +9,7 @@ extern crate serde_derive;
 extern crate byteorder;
 extern crate chrono;
 extern crate clap;
+extern crate dirs;
 extern crate env_logger;
 extern crate flate2;
 extern crate hyper;

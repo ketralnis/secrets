@@ -1,10 +1,10 @@
-use std::env;
 use std::io;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::exit;
 
 use clap::{App, AppSettings, Arg, ArgGroup, SubCommand};
+use dirs;
 use env_logger;
 use openssl::ssl::init as init_openssl;
 use sodiumoxide;
@@ -202,7 +202,7 @@ pub fn main() {
     }
 
     // find or infer the location of .secrets-client.db
-    if matches.value_of_os("db") == None && env::home_dir() == None {
+    if matches.value_of_os("db") == None && dirs::home_dir() == None {
         panic!("--db not specified and $HOME not set\n");
     }
 
@@ -213,7 +213,7 @@ pub fn main() {
             buf
         }
         None => {
-            let home_dir = env::home_dir().unwrap();
+            let home_dir = dirs::home_dir().unwrap();
             home_dir.join(".secrets-client.db")
         }
     };
