@@ -1,4 +1,4 @@
-use std::cmp::{Ord, Eq};
+use std::cmp::{Eq, Ord};
 use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::fs::File;
@@ -7,7 +7,7 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::process::exit;
 
-use clap::{Arg, App, AppSettings, SubCommand};
+use clap::{App, AppSettings, Arg, SubCommand};
 use env_logger;
 use openssl::ssl::init as init_openssl;
 use sodiumoxide;
@@ -95,8 +95,8 @@ pub fn main() {
             panic!("{} already exists", config_file.to_str().unwrap());
         }
         let cn = subargs.value_of("name").unwrap().to_string();
-        let instance = server::SecretsServer::create(config_file, cn, pw)
-            .unwrap();
+        let instance =
+            server::SecretsServer::create(config_file, cn, pw).unwrap();
         // let fingerprint = instance.ssl_fingerprint().unwrap();
         let server_info = instance.get_peer_info().unwrap();
         println!("{}", server_info.printable_report().unwrap());
@@ -195,8 +195,9 @@ fn print_plan_firing(
             known_services.iter().map(|s| (*s).to_owned()).collect();
 
         if let Some(knower) = *knower {
-            println!("{} should run:\n\
-                \tsecrets rotate {} --withhold={}",
+            println!(
+                "{} should run:\n\
+                 \tsecrets rotate {} --withhold={}",
                 knower,
                 service_list.join(","),
                 firee,
@@ -243,12 +244,12 @@ where
         if let Some(service_knowers) = known_by.get(next_service) {
             // for this service, find the person that knows the most things in
             // general
-            let best_knower = service_knowers.iter().max_by_key(
-                |user| match knowers.get(user) {
+            let best_knower = service_knowers.iter().max_by_key(|user| {
+                match knowers.get(user) {
                     Some(x) => x.len(),
                     None => 0,
-                },
-            );
+                }
+            });
 
             if let Some(best) = best_knower {
                 let vec = ret.entry(Some(best)).or_insert_with(|| vec![]);

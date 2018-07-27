@@ -1,4 +1,3 @@
 max_width = 80
-ideal_width = 80
 format_strings = false # to leave sql strings alone
 use_try_shorthand = true

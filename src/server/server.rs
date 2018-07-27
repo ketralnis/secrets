@@ -1,11 +1,11 @@
 use std::path::Path;
 
-use chrono::UTC;
+use chrono::offset::Utc;
 use rusqlite;
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
 
-use api::{User, Service, Grant, JoinRequest, PeerInfo};
+use api::{Grant, JoinRequest, PeerInfo, Service, User};
 use common;
 use common::SecretsContainer;
 use common::SecretsError;
@@ -24,7 +24,6 @@ impl SecretsServer {
         cn: String,
         password: String,
     ) -> Result<Self, SecretsError> {
-
         let mut db = common::create_db(config_file)?;
         create_server_schema(&mut db)?;
         let mut server = SecretsServer {
@@ -54,9 +53,9 @@ impl SecretsServer {
         jr: JoinRequest,
     ) -> Result<User, SecretsError> {
         if jr.server_info != self.get_peer_info()? {
-            return Err(
-                SecretsError::Authentication("server_info doesn't match"),
-            );
+            return Err(SecretsError::Authentication(
+                "server_info doesn't match",
+            ));
         }
 
         if self.user_exists(&jr.client_info.cn)? {
@@ -74,7 +73,7 @@ impl SecretsServer {
             jr.client_info.cn,
             jr.client_info.fingerprint,
             jr.client_info.public_key,
-            jr.client_info.public_sign
+            jr.client_info.public_sign,
         )?;
         info!("created user: {}", user.username);
         Ok(user)
@@ -87,7 +86,7 @@ impl SecretsServer {
         public_key: box_::PublicKey,
         public_sign: sign::PublicKey,
     ) -> Result<User, SecretsError> {
-        let now = UTC::now().timestamp();
+        let now = Utc::now().timestamp();
         self.db.execute(
             "INSERT INTO users(username, ssl_fingerprint,
                                public_key, public_sign,
@@ -100,7 +99,7 @@ impl SecretsServer {
                 &public_key.as_ref(),
                 &public_sign.as_ref(),
                 &now,
-            ]
+            ],
         )?;
         let user = self.get_user(&username)?;
         Ok(user)
@@ -111,7 +110,7 @@ impl SecretsServer {
         username: &str,
         force: bool,
     ) -> Result<FireResult, SecretsError> {
-        let now = UTC::now().timestamp();
+        let now = Utc::now().timestamp();
         let user = self.get_user(username)?;
         let granted_services = self.get_grants_for_grantee(username)?;
 
@@ -119,16 +118,16 @@ impl SecretsServer {
         // by this. this is why we enforce that new services and rotations must
         // always include the person setting the new secret
         if !force && !granted_services.is_empty() {
-            return Ok(
-                FireResult::OutstandingGrants { grants: granted_services },
-            );
+            return Ok(FireResult::OutstandingGrants {
+                grants: granted_services,
+            });
         }
 
         if user.disabled.is_none() {
             // if they weren't already disabled, mark the time.
             self.db.execute(
                 "UPDATE users SET disabled=? WHERE username=?",
-                &[&now, &username]
+                &[&now, &username],
             )?;
         }
 
@@ -143,7 +142,7 @@ impl SecretsServer {
              WHERE username=?
             ",
             &[&username],
-            User::from_row
+            User::from_row,
         )?;
         Ok(user)
     }
@@ -186,13 +185,14 @@ impl SecretsServer {
         &self,
         service_name: &str,
     ) -> Result<Service, SecretsError> {
-        let service = try!(self.db.query_row_and_then(
-                "SELECT service_name, created, modified, creator, modified_by
+        let service = self.db.query_row_and_then(
+            "SELECT service_name, created, modified, creator, modified_by
                  FROM services
                  WHERE service_name=?
                  ",
-                &[&service_name],
-                |r| Service::from_row(r)));
+            &[&service_name],
+            |r| Service::from_row(r),
+        )?;
         Ok(service)
     }
 
@@ -201,7 +201,7 @@ impl SecretsServer {
         let mut stmt = self.db.prepare(
             "SELECT service_name, created, modified, creator, modified_by
              FROM services
-            "
+            ",
         )?;
         let services = stmt.query_and_then(&[], |r| Service::from_row(r))?;
         for maybe_service in services {
@@ -233,7 +233,7 @@ impl SecretsServer {
         // the client has to create the timestamps in order to include them in
         // the signature, but we want them to be able to lie about them. So
         // check all of the timestamps and allow minimal slop
-        let now = UTC::now().timestamp();
+        let now = Utc::now().timestamp();
 
         // make sure we have the most up-to-date version
         let auth_user = self.get_user(&auth_user.username)?;
@@ -244,15 +244,15 @@ impl SecretsServer {
             ));
         }
         if self.service_exists(&service.name)? {
-            return Err(
-                SecretsError::ServiceAlreadyExists(service.name.clone()),
-            );
+            return Err(SecretsError::ServiceAlreadyExists(
+                service.name.clone(),
+            ));
         }
 
         if auth_user.disabled.is_some() {
-            return Err(
-                SecretsError::Authentication("disabled user can't grant"),
-            );
+            return Err(SecretsError::Authentication(
+                "disabled user can't grant",
+            ));
         }
 
         for grant in &grants {
@@ -281,13 +281,13 @@ impl SecretsServer {
         auth_user: &User,
         service: &Service,
     ) -> Result<(), SecretsError> {
-        if (now - service.modified).abs() > SYNC_SLOP ||
-            (now - service.created).abs() > SYNC_SLOP
+        if (now - service.modified).abs() > SYNC_SLOP
+            || (now - service.created).abs() > SYNC_SLOP
         {
             return Err(SecretsError::ServerError("clock sync".to_string()));
         }
-        if service.creator != auth_user.username ||
-            service.modified_by != auth_user.username
+        if service.creator != auth_user.username
+            || service.modified_by != auth_user.username
         {
             return Err(SecretsError::ServerError("you're lying".to_string()));
         }
@@ -303,7 +303,7 @@ impl SecretsServer {
                 &service.modified,
                 &service.creator,
                 &service.modified_by,
-            ]
+            ],
         )?;
 
         Ok(())
@@ -323,14 +323,14 @@ impl SecretsServer {
             return Err(SecretsError::ServerError("you're lying".to_string()));
         }
         if service.name != grant.service_name {
-            return Err(
-                SecretsError::ServerError("malformed request".to_string()),
-            );
+            return Err(SecretsError::ServerError(
+                "malformed request".to_string(),
+            ));
         }
         if auth_user.disabled.is_some() {
-            return Err(
-                SecretsError::Authentication("disabled user can't grant"),
-            );
+            return Err(SecretsError::Authentication(
+                "disabled user can't grant",
+            ));
         }
 
         grant.verify_signature(&auth_user.public_sign)?;
@@ -348,7 +348,7 @@ impl SecretsServer {
                 &grant.ciphertext,
                 &grant.signature.as_ref(),
                 &grant.created,
-            ]
+            ],
         )?;
         Ok(())
     }
@@ -364,7 +364,7 @@ impl SecretsServer {
              SET modified_by=?, modified=?
              WHERE service_name=?
             ",
-            &[&auth_user.username, &now, &service.name]
+            &[&auth_user.username, &now, &service.name],
         )?;
         Ok(())
     }
@@ -380,7 +380,7 @@ impl SecretsServer {
                     created
              FROM grants
              WHERE service_name = ?
-            "
+            ",
         )?;
         let grants =
             stmt.query_and_then(&[&service_name], |r| Grant::from_row(r))?;
@@ -407,7 +407,7 @@ impl SecretsServer {
                     created
              FROM grants
              WHERE grantee = ?
-            "
+            ",
         )?;
         let grants =
             stmt.query_and_then(&[&grantee_name], |r| Grant::from_row(r))?;
@@ -430,7 +430,7 @@ impl SecretsServer {
         grants: Vec<Grant>,
     ) -> Result<(), SecretsError> {
         let service = self.get_service(service_name)?;
-        let now = UTC::now().timestamp();
+        let now = Utc::now().timestamp();
 
         // make sure we have the most up-to-date version
         let auth_user = self.get_user(&auth_user.username)?;
@@ -455,7 +455,7 @@ impl SecretsServer {
         grants: Vec<Grant>,
     ) -> Result<(), SecretsError> {
         let service = self.get_service(service_name)?;
-        let now = UTC::now().timestamp();
+        let now = Utc::now().timestamp();
 
         // make sure we have the most up-to-date version
         let auth_user = self.get_user(&auth_user.username)?;
@@ -471,7 +471,7 @@ impl SecretsServer {
         // delete all of the previous grants
         trans.execute(
             "DELETE FROM grants WHERE service_name=?",
-            &[&service_name]
+            &[&service_name],
         )?;
         // add the new ones
         for grant in grants {
@@ -488,14 +488,15 @@ impl SecretsServer {
         service_name: &str,
         grantee_name: &str,
     ) -> Result<Grant, SecretsError> {
-        let grant = try!(self.db.query_row_and_then(
+        let grant = self.db.query_row_and_then(
             "SELECT service_name, grantee, grantor, ciphertext, signature,
                     created
              FROM grants
              WHERE service_name = ? AND grantee = ?
             ",
             &[&service_name, &grantee_name],
-            |r| Grant::from_row(r)));
+            |r| Grant::from_row(r),
+        )?;
 
         // verify the signature so we don't return invalid grants
         let grantor = self.get_user(&grant.grantor)?;
@@ -569,7 +570,7 @@ fn create_server_schema(
             PRIMARY KEY(grantee, service_name)
         );
         CREATE INDEX grants_services ON grants(service_name);
-        "
+        ",
     )?;
 
     Ok(())
@@ -597,8 +598,8 @@ mod tests {
         drop(created);
 
         debug!("Connecting");
-        let server = SecretsServer::connect(tempfile, password.to_string())
-            .unwrap();
+        let server =
+            SecretsServer::connect(tempfile, password.to_string()).unwrap();
 
         debug!("Creating users");
         let (d_public_key, _d_private_key) = box_::gen_keypair();

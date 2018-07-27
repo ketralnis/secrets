@@ -157,9 +157,10 @@ pub fn edit(
     debug!("editor returned with {:?}", ecode.code());
 
     if !ecode.success() {
-        return Err(PasswordError::Editor(
-            format!("editor failed with {:?}", ecode.code()),
-        ));
+        return Err(PasswordError::Editor(format!(
+            "editor failed with {:?}",
+            ecode.code()
+        )));
     }
     let mut reread = File::open(tfile.path())?;
     let mut inputted: Vec<u8> = Vec::new();

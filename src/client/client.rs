@@ -1,16 +1,16 @@
 use std::collections::HashMap;
-use std::io::Write;
 use std::io;
+use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::UTC;
+use chrono::offset::Utc;
+use hyper;
 use hyper::method::Method;
 use hyper::net::HttpsConnector;
 use hyper::net::Openssl;
 use hyper::status::StatusCode;
 use hyper::Url;
-use hyper;
 use openssl::crypto::hash::Type as HashType;
 use openssl::nid::Nid;
 use openssl::ssl::{SSL_VERIFY_NONE, SSL_VERIFY_PEER};
@@ -24,12 +24,14 @@ use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
 use url::form_urlencoded::Serializer as QueryStringSerializer;
 
-use api::{ApiResponse, PeerInfo, JoinRequest, Service, Grant,
-          ServiceCreateRequest, GrantRequest, User};
+use api::{
+    ApiResponse, Grant, GrantRequest, JoinRequest, PeerInfo, Service,
+    ServiceCreateRequest, User,
+};
 use common;
+use common::default_ssl_context;
 use common::SecretsContainer;
 use common::SecretsError;
-use common::default_ssl_context;
 use keys;
 use utils;
 
@@ -60,7 +62,9 @@ impl SecretsClient {
         // any future connections to them will fail anyway.
         let mut ssl_context = default_ssl_context()?;
         ssl_context.set_verify(SSL_VERIFY_NONE, None);
-        let ssl = Openssl { context: Arc::new(ssl_context) };
+        let ssl = Openssl {
+            context: Arc::new(ssl_context),
+        };
         let connector = HttpsConnector::new(ssl);
         let http = hyper::Client::with_connector(connector);
 
@@ -70,17 +74,16 @@ impl SecretsClient {
         info!("connecting to {}", info_url);
         let response = http.get(&info_url).send()?;
         if response.status != hyper::Ok {
-            return Err(SecretsError::ClientError(
-                format!("unknown status {}", response.status),
-            ));
+            return Err(SecretsError::ClientError(format!(
+                "unknown status {}",
+                response.status
+            )));
         }
 
         let api_response: ApiResponse = dejson_from_reader(response)?;
-        let server_info = api_response
-            .server_info
-            .ok_or_else(|| {
-                SecretsError::ClientError("missing server info".to_string())
-            })?;
+        let server_info = api_response.server_info.ok_or_else(|| {
+            SecretsError::ClientError("missing server info".to_string())
+        })?;
 
         let server_report = server_info.printable_report()?;
         io::stderr().write_all(server_report.as_bytes())?;
@@ -103,17 +106,14 @@ impl SecretsClient {
         client.create_and_store_keys(&username)?;
         client.set_global("username", &username)?;
         client.set_global("server_host", &host)?;
-        client
-            .set_global("server_fingerprint", &server_info.fingerprint)?;
+        client.set_global("server_fingerprint", &server_info.fingerprint)?;
         client.set_global("server_cn", &server_info.cn)?;
         client
             .set_global("server_public_key", &server_info.public_key.as_ref())?;
-        try!(
-            client.set_global(
-                "server_public_sign",
-                &server_info.public_sign.as_ref(),
-            )
-        );
+        client.set_global(
+            "server_public_sign",
+            &server_info.public_sign.as_ref(),
+        )?;
 
         Ok(client)
     }
@@ -201,7 +201,9 @@ impl SecretsClient {
             (server_fingerprint, server_cn),
         );
 
-        let ssl = Openssl { context: Arc::new(ssl_context) };
+        let ssl = Openssl {
+            context: Arc::new(ssl_context),
+        };
         let connector = HttpsConnector::new(ssl);
         let http_client = hyper::Client::with_connector(connector);
         let host = self.get_global::<String>("server_host")?;
@@ -228,8 +230,7 @@ impl SecretsClient {
         if response.status != StatusCode::Ok {
             return Err(SecretsError::ClientError(format!(
                 "got an error from the server ({}): {}",
-                req.path,
-                response.status
+                req.path, response.status
             )));
         }
         let api_response: ApiResponse = dejson_from_reader(response)?;
@@ -264,7 +265,7 @@ impl SecretsClient {
         plaintext: Vec<u8>,
         mut grantees: Vec<String>,
     ) -> Result<(), SecretsError> {
-        let now = UTC::now().timestamp();
+        let now = Utc::now().timestamp();
         let username = self.username()?;
 
         if !grantees.contains(&username) {
@@ -297,7 +298,7 @@ impl SecretsClient {
             &service_name,
             now,
             grantees,
-            api_response.users
+            api_response.users,
         )?;
 
         let service_creator = ServiceCreateRequest {
@@ -336,7 +337,7 @@ impl SecretsClient {
                     now,
                     &private_key,
                     &grantee.public_key,
-                    &private_sign
+                    &private_sign,
                 )?;
                 // make sure the signature checks out to catch sig issues
                 // earlier in the process
@@ -356,12 +357,9 @@ impl SecretsClient {
 
         let mut api_response = self.server_request(req)?;
 
-        let user = api_response
-            .users
-            .remove(username)
-            .ok_or_else(
-                || SecretsError::ClientError("user not found".to_string())
-            )?;
+        let user = api_response.users.remove(username).ok_or_else(|| {
+            SecretsError::ClientError("user not found".to_string())
+        })?;
         Ok(user)
     }
 
@@ -374,12 +372,9 @@ impl SecretsClient {
 
         let mut api_response = self.server_request(req)?;
 
-        let service = api_response
-            .services
-            .remove(service_name)
-            .ok_or_else(|| {
-                SecretsError::ClientError("service not found".to_string())
-            })?;
+        let service = api_response.services.remove(service_name).ok_or_else(
+            || SecretsError::ClientError("service not found".to_string()),
+        )?;
         Ok(service)
     }
 
@@ -392,31 +387,21 @@ impl SecretsClient {
         let mut api_response = self.server_request(req)?;
 
         // just make sure the service exists
-        api_response
-            .services
-            .remove(&service_name)
-            .ok_or_else(|| {
-                SecretsError::ClientError("service not found".to_string())
-            })?;
+        api_response.services.remove(&service_name).ok_or_else(|| {
+            SecretsError::ClientError("service not found".to_string())
+        })?;
 
-        let mut service_block = api_response
-            .grants
-            .remove(&service_name)
-            .ok_or_else(
-                || SecretsError::ClientError("grant not found".to_string())
-            )?;
-        let grant = service_block
-            .remove(&username)
-            .ok_or_else(
-                || SecretsError::ClientError("grant not found".to_string())
-            )?;
-
-        let grantor = api_response
-            .users
-            .remove(&grant.grantor)
-            .ok_or_else(|| {
-                SecretsError::ClientError("user not included".to_string())
+        let mut service_block =
+            api_response.grants.remove(&service_name).ok_or_else(|| {
+                SecretsError::ClientError("grant not found".to_string())
             })?;
+        let grant = service_block.remove(&username).ok_or_else(|| {
+            SecretsError::ClientError("grant not found".to_string())
+        })?;
+
+        let grantor = api_response.users.remove(&grant.grantor).ok_or_else(
+            || SecretsError::ClientError("user not included".to_string()),
+        )?;
 
         grant.verify_signature(&grantor.public_sign)?;
 
@@ -437,31 +422,21 @@ impl SecretsClient {
         let mut api_response = self.server_request(req)?;
 
         // just make sure the service exists
-        api_response
-            .services
-            .remove(service_name)
-            .ok_or_else(|| {
-                SecretsError::ClientError("service not found".to_string())
-            })?;
+        api_response.services.remove(service_name).ok_or_else(|| {
+            SecretsError::ClientError("service not found".to_string())
+        })?;
 
-        let mut service_block = api_response
-            .grants
-            .remove(service_name)
-            .ok_or_else(
-                || SecretsError::ClientError("grant not found".to_string())
-            )?;
-        let grant = service_block
-            .remove(&username)
-            .ok_or_else(
-                || SecretsError::ClientError("grant not found".to_string())
-            )?;
-
-        let grantor = api_response
-            .users
-            .remove(&grant.grantor)
-            .ok_or_else(|| {
-                SecretsError::ClientError("user not included".to_string())
+        let mut service_block =
+            api_response.grants.remove(service_name).ok_or_else(|| {
+                SecretsError::ClientError("grant not found".to_string())
             })?;
+        let grant = service_block.remove(&username).ok_or_else(|| {
+            SecretsError::ClientError("grant not found".to_string())
+        })?;
+
+        let grantor = api_response.users.remove(&grant.grantor).ok_or_else(
+            || SecretsError::ClientError("user not included".to_string()),
+        )?;
 
         let decrypted = self._decrypt_grant(grant, grantor)?;
 
@@ -496,7 +471,7 @@ impl SecretsClient {
         service_name: String,
         grantees: Vec<String>,
     ) -> Result<(), SecretsError> {
-        let now = UTC::now().timestamp();
+        let now = Utc::now().timestamp();
         let username = self.username()?;
 
         // first pull down the service, our grant, and the public keys of all of
@@ -510,17 +485,13 @@ impl SecretsClient {
         }
         let mut api_response = self.server_request(req)?;
 
-        let mut service_block = api_response
-            .grants
-            .remove(&service_name)
-            .ok_or_else(
-                || SecretsError::ClientError("grant not found".to_string())
-            )?;
-        let grant = service_block
-            .remove(&username)
-            .ok_or_else(
-                || SecretsError::ClientError("grant not found".to_string())
-            )?;
+        let mut service_block =
+            api_response.grants.remove(&service_name).ok_or_else(|| {
+                SecretsError::ClientError("grant not found".to_string())
+            })?;
+        let grant = service_block.remove(&username).ok_or_else(|| {
+            SecretsError::ClientError("grant not found".to_string())
+        })?;
 
         // we didn't ask for this, but the server will automatically add it in
         // because we asked for the grant
@@ -539,7 +510,7 @@ impl SecretsClient {
             &service_name,
             now,
             grantees,
-            api_response.users
+            api_response.users,
         )?;
 
         let granter = GrantRequest {
@@ -585,18 +556,14 @@ impl SecretsClient {
         let mut api_response = self.server_request(req)?;
 
         // make sure the service exists
-        let _: Service = api_response
-            .services
-            .remove(service_name)
-            .ok_or_else(|| {
+        let _: Service =
+            api_response.services.remove(service_name).ok_or_else(|| {
                 SecretsError::ClientError("service not found".to_string())
             })?;
-        let service_block = api_response
-            .grants
-            .remove(service_name)
-            .ok_or_else(
-                || SecretsError::ClientError("grants not found".to_string())
-            )?;
+        let service_block =
+            api_response.grants.remove(service_name).ok_or_else(|| {
+                SecretsError::ClientError("grants not found".to_string())
+            })?;
 
         let current_grants = service_block;
 
@@ -605,13 +572,11 @@ impl SecretsClient {
                 current_grants.keys().map(|s| s.to_owned()).collect()
             }
             RotationStrategy::Only(ref whom) => whom.clone(),
-            RotationStrategy::Withhold(ref whom) => {
-                current_grants
-                    .keys()
-                    .filter(|w| !whom.contains(w))
-                    .map(|w| w.to_owned())
-                    .collect()
-            }
+            RotationStrategy::Withhold(ref whom) => current_grants
+                .keys()
+                .filter(|w| !whom.contains(w))
+                .map(|w| w.to_owned())
+                .collect(),
         };
         if !new_grantee_names.contains(&username) {
             // the server will insist on this too
@@ -636,19 +601,19 @@ impl SecretsClient {
         );
         println!("New grantees:\n\t{}", new_grantee_names.join(","));
 
-        if *rotation_strategy != RotationStrategy::Copy &&
-            !utils::prompt_yn("does that look right? [y/n] ")?
+        if *rotation_strategy != RotationStrategy::Copy
+            && !utils::prompt_yn("does that look right? [y/n] ")?
         {
             return Err(SecretsError::Authentication("refused"));
         }
 
-        let now = UTC::now().timestamp();
+        let now = Utc::now().timestamp();
         let new_grants = self._create_grants(
             plaintext,
             service_name,
             now,
             new_grantee_names,
-            api_response.users
+            api_response.users,
         )?;
 
         let service_rotator = GrantRequest {
@@ -731,8 +696,8 @@ struct SecretsRequest {
 // when we are rotating a password, to whom do we give it?
 #[derive(Debug, PartialEq)]
 pub enum RotationStrategy {
-    Copy, // everyone that has it now
-    Only(Vec<String>), // only these people plus the grantor)
+    Copy,                  // everyone that has it now
+    Only(Vec<String>),     // only these people plus the grantor)
     Withhold(Vec<String>), // everyone except these people
 }
 

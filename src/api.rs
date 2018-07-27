@@ -5,23 +5,23 @@ use std::collections::HashMap;
 use std::io::Cursor;
 use std::io::{Read, Write};
 
-use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
+use flate2::Compression;
 use rfc1751::ToRfc1751;
 use rusqlite;
 use rustc_serialize::base64::STANDARD as STANDARD_BASE64_CONFIG;
 use rustc_serialize::base64::{FromBase64, ToBase64};
-use rustc_serialize::hex::{ToHex, FromHex};
+use rustc_serialize::hex::{FromHex, ToHex};
 use serde_json::from_slice as json_from_slice;
 use serde_json::ser::to_string as json_to_string;
 use sodiumoxide::crypto::box_;
-use sodiumoxide::crypto::sign;
 use sodiumoxide::crypto::hash::sha256;
+use sodiumoxide::crypto::sign;
 
 use common::SecretsError;
-use keys::CryptoError;
 use keys;
+use keys::CryptoError;
 use utils::pretty_date;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,8 +148,8 @@ impl Grant {
 
     pub fn from_row(row: &rusqlite::Row) -> Result<Self, SecretsError> {
         let sig: Vec<u8> = row.get("signature");
-        let signature = sign::Signature::from_slice(&sig)
-            .ok_or(CryptoError::CantDecrypt)?;
+        let signature =
+            sign::Signature::from_slice(&sig).ok_or(CryptoError::CantDecrypt)?;
 
         let u = Grant {
             grantee: row.get("grantee"),
@@ -216,7 +216,7 @@ impl Grant {
         let decrypted = keys::decrypt_from(
             &self.ciphertext,
             grantee_public_key,
-            grantor_private_key
+            grantor_private_key,
         )?;
         Ok(decrypted)
     }

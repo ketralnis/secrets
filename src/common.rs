@@ -1,10 +1,9 @@
 /// Code shared by `SecretsClient` and `SecretsServer`
-
 use std::io;
 use std::io::Cursor;
 use std::path::Path;
 
-use chrono::UTC;
+use chrono::offset::Utc;
 use hyper;
 use openssl::crypto::hash::Type as HashType;
 use openssl::crypto::pkey::PKey;
@@ -18,10 +17,10 @@ use openssl::x509::extension::KeyUsageOption::DigitalSignature;
 use openssl::x509::X509;
 use openssl::x509::X509Generator;
 use rfc1751::ToRfc1751Error;
+use rusqlite;
 use rusqlite::types::FromSql;
 use rusqlite::types::ToSql;
-use rusqlite;
-use rustc_serialize::hex::{ToHex, FromHexError};
+use rustc_serialize::hex::{FromHexError, ToHex};
 use serde_json::Error as SerdeError;
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
@@ -137,11 +136,9 @@ pub fn default_ssl_context() -> Result<SslContext, SecretsError> {
     let mut ssl_context = SslContext::new(SslMethod::Tlsv1)?;
     ssl_context
         .set_options(SSL_OP_NO_SSLV2 | SSL_OP_NO_SSLV3 | SSL_OP_NO_COMPRESSION);
-    try!(
-        ssl_context.set_cipher_list(
-            "ALL!EXPORT!EXPORT40!EXPORT56!aNULL!LOW!RC4@STRENGTH",
-        )
-    );
+    ssl_context.set_cipher_list(
+        "ALL!EXPORT!EXPORT40!EXPORT56!aNULL!LOW!RC4@STRENGTH",
+    )?;
     Ok(ssl_context)
 }
 
@@ -238,10 +235,11 @@ pub trait SecretsContainer {
         key_name: &str,
     ) -> Result<T, SecretsError> {
         let conn = self.get_db();
-        let value: T = try!(conn.query_row(
+        let value: T = conn.query_row(
             "SELECT value FROM globals WHERE key = ? AND NOT encrypted",
             &[&key_name],
-            |row| row.get(0)));
+            |row| row.get(0),
+        )?;
         Ok(value)
     }
 
@@ -254,7 +252,7 @@ pub trait SecretsContainer {
         conn.execute(
             "INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
              VALUES(?, ?, ?, 0)",
-            &[&key_name, value, &UTC::now().timestamp()]
+            &[&key_name, value, &Utc::now().timestamp()],
         )?;
         Ok(())
     }
@@ -292,7 +290,7 @@ pub trait SecretsContainer {
         db.execute(
             "INSERT OR REPLACE INTO globals(key, value, modified, encrypted)
              VALUES(?, ?, ?, 1)",
-            &[&key_name, &ciphertext, &UTC::now().timestamp()]
+            &[&key_name, &ciphertext, &Utc::now().timestamp()],
         )?;
         Ok(())
     }

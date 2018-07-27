@@ -13,18 +13,18 @@ use hyper::status::StatusCode;
 use hyper::uri::RequestUri;
 use openssl::crypto::hash::Type as HashType;
 use openssl::nid::Nid;
-use openssl::ssl::SSL_VERIFY_PEER;
 use openssl::ssl::SslStream;
+use openssl::ssl::SSL_VERIFY_PEER;
 use openssl::x509::X509StoreContext;
 use rustc_serialize::hex::ToHex;
 use serde_json::de::from_reader as dejson_from_reader;
 use serde_json::ser::to_vec as json_to_vec;
 use url::form_urlencoded::parse as parse_qs;
 
-use api::{User, Grant, ApiResponse, ServiceCreateRequest, GrantRequest};
+use api::{ApiResponse, Grant, GrantRequest, ServiceCreateRequest, User};
+use common::default_ssl_context;
 use common::SecretsContainer;
 use common::SecretsError;
-use common::default_ssl_context;
 use server::server::SecretsServer;
 
 struct ServerHandler {
@@ -90,8 +90,8 @@ impl ServerHandler {
                     let (service_name, grantee_name) =
                         Grant::split_key(grant_name);
 
-                    let grant = instance
-                        .get_grant(&service_name, &grantee_name)?;
+                    let grant =
+                        instance.get_grant(&service_name, &grantee_name)?;
 
                     // add in the dependent fields
                     let grantee = instance.get_user(&grantee_name)?;
@@ -108,8 +108,7 @@ impl ServerHandler {
                 }
             }
 
-            if let Some(service_names) =
-                query_params.get("grants-for-service")
+            if let Some(service_names) = query_params.get("grants-for-service")
             {
                 // they want a list of all Grants to the given Service. This is
                 // usually because they're about to rotate it, so we include the
@@ -135,8 +134,7 @@ impl ServerHandler {
                 }
             }
 
-            if let Some(grantee_names) =
-                query_params.get("grants-for-grantee")
+            if let Some(grantee_names) = query_params.get("grants-for-grantee")
             {
                 for grantee_name in grantee_names {
                     // list all grants held by this person
@@ -147,8 +145,8 @@ impl ServerHandler {
 
                     let grants = instance.get_grants_for_grantee(grantee_name)?;
                     for grant in grants {
-                        let service = instance
-                            .get_service(&grant.service_name)?;
+                        let service =
+                            instance.get_service(&grant.service_name)?;
                         api.services.insert(service.name.clone(), service);
 
                         api.grants
@@ -252,8 +250,7 @@ impl ServerHandler {
                 *response.status_mut() = StatusCode::Unauthorized;
                 response.send(err.as_bytes())
             }
-            SecretsError::Crypto(_) |
-            _ => {
+            SecretsError::Crypto(_) | _ => {
                 // SecretsError::Crypto is probably because they are screwing
                 // around with trying to guess keys or something. It's important
                 // that they not be able to tell it from any other internal
@@ -353,7 +350,9 @@ fn make_ssl(instance: &mut SecretsServer) -> Result<Openssl, SecretsError> {
     ssl_context.set_certificate(&public_pem)?;
     ssl_context.set_private_key(&private_pem)?;
     ssl_context.check_private_key()?;
-    let ssl = Openssl { context: Arc::new(ssl_context) };
+    let ssl = Openssl {
+        context: Arc::new(ssl_context),
+    };
     Ok(ssl)
 }
 
@@ -364,7 +363,9 @@ pub fn listen(
     let ssl = make_ssl(&mut instance)?;
     let hyper_server = HyperServer::https(listen, ssl)?;
     let mutexed_instance = Arc::new(Mutex::new(instance));
-    let server_handler = ServerHandler { instance: mutexed_instance };
+    let server_handler = ServerHandler {
+        instance: mutexed_instance,
+    };
     hyper_server.handle(server_handler)?;
     info!("terminating (hyper_server.handle returned)");
     Ok(())
@@ -373,7 +374,10 @@ pub fn listen(
 fn url_matches(request: &Request, method: Method, prefix: &str) -> bool {
     match request.uri {
         RequestUri::AbsolutePath(ref x)
-            if x.starts_with(prefix) && request.method == method => true,
+            if x.starts_with(prefix) && request.method == method =>
+        {
+            true
+        }
         _ => false,
     }
 }

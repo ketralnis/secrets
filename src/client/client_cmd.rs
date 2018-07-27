@@ -1,10 +1,10 @@
 use std::env;
-use std::io::Write;
 use std::io;
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::exit;
 
-use clap::{Arg, ArgGroup, App, AppSettings, SubCommand};
+use clap::{App, AppSettings, Arg, ArgGroup, SubCommand};
 use env_logger;
 use openssl::ssl::init as init_openssl;
 use sodiumoxide;
@@ -16,13 +16,14 @@ use utils;
 
 // TODO this renders like crap
 // TODO move this
-pub const PASSWORD_SOURCE_HELP: &'static str = "\
-                                                Where to get the master password. Valid formats:\n\
-                                                \tpass:password (a literal password)\n\
-                                                \tenv:VARIABLE (an environment variable)\n\
-                                                \tfile:filename (read from a file; beware of newlines!)\n\
-                                                \tfd:number (read from a file descriptor)\n\
-                                                \tprompt (you will be prompted)";
+pub const PASSWORD_SOURCE_HELP: &'static str =
+    "\
+     Where to get the master password. Valid formats:\n\
+     \tpass:password (a literal password)\n\
+     \tenv:VARIABLE (an environment variable)\n\
+     \tfile:filename (read from a file; beware of newlines!)\n\
+     \tfd:number (read from a file descriptor)\n\
+     \tprompt (you will be prompted)";
 
 fn make_clap<'a, 'b>() -> App<'a, 'b> {
     App::new("secrets-client")
@@ -274,8 +275,8 @@ pub fn main() {
                 Vec::new()
             };
             let secret_source = subargs.value_of("source").unwrap();
-            let secret_source = password::parse_password_source(secret_source)
-                .unwrap();
+            let secret_source =
+                password::parse_password_source(secret_source).unwrap();
             let secret_value = password::evaluate_password_source(
                 secret_source,
                 "secret data",
@@ -362,9 +363,8 @@ pub fn main() {
                 .map(|s| s.to_owned())
                 .collect();
 
-            let rotation_stategy = if !subargs
-                .is_present("rotation strategy") ||
-                subargs.is_present("copy")
+            let rotation_stategy = if !subargs.is_present("rotation strategy")
+                || subargs.is_present("copy")
             {
                 client::RotationStrategy::Copy
             } else if let Some(whos) = subargs.values_of("withhold") {
@@ -378,8 +378,8 @@ pub fn main() {
             };
 
             let secret_source = subargs.value_of("source").unwrap();
-            let secret_source = password::parse_password_source(secret_source)
-                .unwrap();
+            let secret_source =
+                password::parse_password_source(secret_source).unwrap();
             let secret_value = password::evaluate_password_source(
                 secret_source,
                 "secret value",
@@ -402,14 +402,13 @@ pub fn main() {
                 for service in instance.all_services().unwrap() {
                     println!("{}", service.name);
                 }
-            } else if subargs.is_present("mine") ||
-                       subargs.is_present("grantee")
+            } else if subargs.is_present("mine")
+                || subargs.is_present("grantee")
             {
                 // list all services that a given user holds a grant for
                 let grantee_names = if subargs.is_present("mine") {
                     vec![instance.username().unwrap()]
-                } else if let Some(grantee_names) =
-                    subargs.values_of("grantee")
+                } else if let Some(grantee_names) = subargs.values_of("grantee")
                 {
                     grantee_names.map(|s| s.to_owned()).collect()
                 } else {
