@@ -29,26 +29,63 @@ use url::ParseError;
 use keys;
 use keys::Authable;
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum SecretsError {
-        Authentication(err: &'static str) {}
-        ClientError(err: String) {} // client didn't like something the server did
-        Crypto(err: keys::CryptoError) {from()}
-        FromHex(err: FromHexError) {from()}
-        HyperError(err: hyper::Error) {from()}
-        Io(err: io::Error) {from()}
-        Json(err: SerdeError) {from()}
-        Parse(err: ParseError) {from()}
-        ServerError(err: String) {} // server didn't like something the client did
-        ServiceAlreadyExists(err: String) {}
-        Sqlite(err: rusqlite::Error) {from()}
-        Ssl(err: SslError) {from()}
-        ToRfc1751(err: ToRfc1751Error) {from()}
-        Unknown(err: &'static str) {}
-        UserDoesntExist(err: String) {}
-    }
+#[derive(Debug, Fail)]
+pub enum SecretsError {
+    #[fail(display = "Authentication({})", _0)]
+    Authentication(&'static str),
+
+    #[fail(display = "ClientError({})", _0)]
+    ClientError(String), // client didn't like something the server did
+
+    #[fail(display = "Crypto({:?})", _0)]
+    Crypto(#[fail(cause)] keys::CryptoError),
+
+    #[fail(display = "FromHex({:?})", _0)]
+    FromHex(#[fail(cause)] FromHexError),
+
+    #[fail(display = "HyperError({:?})", _0)]
+    Hyper(#[fail(cause)] hyper::Error),
+
+    #[fail(display = "Io({:?})", _0)]
+    Io(#[fail(cause)] io::Error),
+
+    #[fail(display = "Json({:?})", _0)]
+    Json(#[fail(cause)] SerdeError),
+
+    #[fail(display = "Parse({:?})", _0)]
+    Parse(#[fail(cause)] ParseError),
+
+    #[fail(display = "ServerError({})", _0)]
+    ServerError(String), // server didn't like something the client did
+
+    #[fail(display = "ServiceAlreadyExists({})", _0)]
+    ServiceAlreadyExists(String),
+
+    #[fail(display = "Sqlite({:?})", _0)]
+    Sqlite(#[fail(cause)] rusqlite::Error),
+
+    #[fail(display = "Ssl({:?})", _0)]
+    Ssl(#[fail(cause)] SslError),
+
+    #[fail(display = "ToRfc1751({:?})", _0)]
+    ToRfc1751(#[fail(cause)] ToRfc1751Error),
+
+    #[fail(display = "Unknown({})", _0)]
+    Unknown(&'static str),
+
+    #[fail(display = "UserDoesntExist({})", _0)]
+    UserDoesntExist(String),
 }
+
+simple_err_impl!(SecretsError, Crypto, keys::CryptoError);
+simple_err_impl!(SecretsError, FromHex, FromHexError);
+simple_err_impl!(SecretsError, Hyper, hyper::Error);
+simple_err_impl!(SecretsError, Io, io::Error);
+simple_err_impl!(SecretsError, Json, SerdeError);
+simple_err_impl!(SecretsError, Parse, ParseError);
+simple_err_impl!(SecretsError, Sqlite, rusqlite::Error);
+simple_err_impl!(SecretsError, Ssl, SslError);
+simple_err_impl!(SecretsError, ToRfc1751, ToRfc1751Error);
 
 pub fn init_ssl_cert(cn: &str) -> Result<(Vec<u8>, Vec<u8>), SecretsError> {
     let gen = X509Generator::new()

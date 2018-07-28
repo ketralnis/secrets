@@ -8,14 +8,19 @@ use sodiumoxide::crypto::pwhash;
 use sodiumoxide::crypto::secretbox;
 use sodiumoxide::crypto::sign;
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum CryptoError {
-        Io(err: io::Error) {from()}
-        CantDecrypt
-        Unknown
-    }
+#[derive(Debug, Fail)]
+pub enum CryptoError {
+    #[fail(display = "Io({})", _0)]
+    Io(#[fail(cause)] io::Error),
+
+    #[fail(display = "CantDecrypt")]
+    CantDecrypt,
+
+    #[fail(display = "Unknown")]
+    Unknown,
 }
+
+simple_err_impl!(CryptoError, Io, io::Error);
 
 pub fn derive_key_from_password(
     password: &[u8],

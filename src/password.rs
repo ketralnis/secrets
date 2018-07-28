@@ -23,15 +23,24 @@ pub enum PasswordSource {
     Edit(Option<String>),
 }
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum PasswordError {
-        VarError(err: env::VarError) {from()}
-        Io(err: io::Error) {from()}
-        Utf8(err: string::FromUtf8Error) {from()}
-        Editor(what: String) {}
-    }
+#[derive(Debug, Fail)]
+pub enum PasswordError {
+    #[fail(display = "VarError({})", _0)]
+    VarError(#[fail(cause)] env::VarError),
+
+    #[fail(display = "Io({})", _0)]
+    Io(#[fail(cause)] io::Error),
+
+    #[fail(display = "Utf8({})", _0)]
+    Utf8(#[fail(cause)] string::FromUtf8Error),
+
+    #[fail(display = "Editor({})", _0)]
+    Editor(String),
 }
+
+simple_err_impl!(PasswordError, VarError, env::VarError);
+simple_err_impl!(PasswordError, Io, io::Error);
+simple_err_impl!(PasswordError, Utf8, string::FromUtf8Error);
 
 pub fn validate_password_source<T: AsRef<str>>(
     source: T,

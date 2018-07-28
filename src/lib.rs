@@ -1,7 +1,7 @@
 #[cfg(test)]
 extern crate tempdir;
-#[macro_use(quick_error)]
-extern crate quick_error;
+#[macro_use]
+extern crate failure;
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -25,12 +25,13 @@ extern crate sodiumoxide;
 extern crate tempfile;
 extern crate url;
 
+#[macro_use]
+mod utils;
 mod api;
 mod common;
 mod getpass;
 mod keys;
 mod password;
-mod utils;
 
 pub mod client {
     mod client;

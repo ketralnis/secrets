@@ -4,6 +4,17 @@ use std::io::Write;
 use chrono::{Local, TimeZone};
 use regex;
 
+#[macro_export]
+macro_rules! simple_err_impl {
+    ($root_type:ident, $variant_name:ident, $source_error:ty) => {
+        impl From<$source_error> for $root_type {
+            fn from(err: $source_error) -> Self {
+                $root_type::$variant_name(err)
+            }
+        }
+    };
+}
+
 pub fn validate_host(name: &str, value: &str) -> Result<(), String> {
     re_validator(name, r"[a-zA-Z0-9.-]+(:[0-9]{1,5})?", value)
 }
