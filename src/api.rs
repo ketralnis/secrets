@@ -19,10 +19,10 @@ use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::hash::sha256;
 use sodiumoxide::crypto::sign;
 
-use common::SecretsError;
-use keys;
-use keys::CryptoError;
-use utils::pretty_date;
+use crate::common::SecretsError;
+use crate::keys;
+use crate::keys::CryptoError;
+use crate::utils::pretty_date;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {

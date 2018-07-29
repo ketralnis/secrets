@@ -24,16 +24,16 @@ use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
 use url::form_urlencoded::Serializer as QueryStringSerializer;
 
-use api::{
+use crate::api::{
     ApiResponse, Grant, GrantRequest, JoinRequest, PeerInfo, Service,
     ServiceCreateRequest, User,
 };
-use common;
-use common::default_ssl_context;
-use common::SecretsContainer;
-use common::SecretsError;
-use keys;
-use utils;
+use crate::common;
+use crate::common::default_ssl_context;
+use crate::common::SecretsContainer;
+use crate::common::SecretsError;
+use crate::keys;
+use crate::utils;
 
 pub struct SecretsClient {
     db: rusqlite::Connection,

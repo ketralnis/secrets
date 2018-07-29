@@ -12,13 +12,13 @@ use env_logger;
 use openssl::ssl::init as init_openssl;
 use sodiumoxide;
 
-use api::{Grant, JoinRequest};
-use client::client_cmd::PASSWORD_SOURCE_HELP;
-use common::SecretsError;
-use password;
-use server::listener;
-use server::server;
-use utils;
+use crate::api::{Grant, JoinRequest};
+use crate::client::client_cmd::PASSWORD_SOURCE_HELP;
+use crate::common::SecretsError;
+use crate::password;
+use crate::server::listener;
+use crate::server::server;
+use crate::utils;
 
 fn make_clap<'a, 'b>() -> App<'a, 'b> {
     App::new("secrets-server")

@@ -5,11 +5,11 @@ use rusqlite;
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
 
-use api::{Grant, JoinRequest, PeerInfo, Service, User};
-use common;
-use common::SecretsContainer;
-use common::SecretsError;
-use utils;
+use crate::api::{Grant, JoinRequest, PeerInfo, Service, User};
+use crate::common;
+use crate::common::SecretsContainer;
+use crate::common::SecretsError;
+use crate::utils;
 
 const SYNC_SLOP: i64 = 60; // in seconds
 

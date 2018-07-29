@@ -9,10 +9,10 @@ use env_logger;
 use openssl::ssl::init as init_openssl;
 use sodiumoxide;
 
-use api::Grant;
-use client::client;
-use password;
-use utils;
+use crate::api::Grant;
+use crate::client::client;
+use crate::password;
+use crate::utils;
 
 // TODO this renders like crap
 // TODO move this

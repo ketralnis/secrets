@@ -26,8 +26,8 @@ use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
 use url::ParseError;
 
-use keys;
-use keys::Authable;
+use crate::keys;
+use crate::keys::Authable;
 
 #[derive(Debug, Fail)]
 pub enum SecretsError {

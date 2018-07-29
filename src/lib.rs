@@ -1,29 +1,11 @@
-#[cfg(test)]
-extern crate tempdir;
+#![feature(rust_2018_preview, use_extern_macros)]
+
 #[macro_use]
 extern crate failure;
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate serde_derive;
-extern crate byteorder;
-extern crate chrono;
-extern crate clap;
-extern crate dirs;
-extern crate env_logger;
-extern crate flate2;
-extern crate hyper;
-extern crate libc;
-extern crate openssl;
-extern crate regex;
-extern crate rfc1751;
-extern crate rusqlite;
-extern crate rustc_serialize;
-extern crate serde;
-extern crate serde_json;
-extern crate sodiumoxide;
-extern crate tempfile;
-extern crate url;
 
 #[macro_use]
 mod utils;

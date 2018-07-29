@@ -1,5 +1,3 @@
-extern crate secrets;
-
 use secrets::server::server_cmd;
 
 pub fn main() {

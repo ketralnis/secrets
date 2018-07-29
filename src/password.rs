@@ -11,7 +11,7 @@ use std::string;
 
 use tempfile;
 
-use getpass;
+use crate::getpass;
 
 pub enum PasswordSource {
     Password(String),
