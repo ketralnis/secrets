@@ -9,6 +9,7 @@ use std::process::exit;
 
 use clap::{App, AppSettings, Arg, SubCommand};
 use env_logger;
+use log::{info, log, warn};
 use openssl::ssl::init as init_openssl;
 use sodiumoxide;
 

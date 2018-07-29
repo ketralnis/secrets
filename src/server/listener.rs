@@ -11,6 +11,7 @@ use hyper::server::Server as HyperServer;
 use hyper::server::{Handler, Request, Response};
 use hyper::status::StatusCode;
 use hyper::uri::RequestUri;
+use log::{debug, error, info, log};
 use openssl::crypto::hash::Type as HashType;
 use openssl::nid::Nid;
 use openssl::ssl::SslStream;

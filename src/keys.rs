@@ -2,6 +2,7 @@ use std::io;
 use std::io::Read;
 
 use byteorder::{NetworkEndian, ReadBytesExt, WriteBytesExt};
+use failure::Fail;
 use sodiumoxide::crypto::auth;
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::pwhash;

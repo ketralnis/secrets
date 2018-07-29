@@ -13,6 +13,7 @@ use rusqlite;
 use rustc_serialize::base64::STANDARD as STANDARD_BASE64_CONFIG;
 use rustc_serialize::base64::{FromBase64, ToBase64};
 use rustc_serialize::hex::{FromHex, ToHex};
+use serde_derive::{Deserialize, Serialize};
 use serde_json::from_slice as json_from_slice;
 use serde_json::ser::to_string as json_to_string;
 use sodiumoxide::crypto::box_;

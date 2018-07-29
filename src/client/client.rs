@@ -11,6 +11,7 @@ use hyper::net::HttpsConnector;
 use hyper::net::Openssl;
 use hyper::status::StatusCode;
 use hyper::Url;
+use log::{error, info, log};
 use openssl::crypto::hash::Type as HashType;
 use openssl::nid::Nid;
 use openssl::ssl::{SSL_VERIFY_NONE, SSL_VERIFY_PEER};

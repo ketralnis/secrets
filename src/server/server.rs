@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use chrono::offset::Utc;
+use log::{info, log};
 use rusqlite;
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::sign;
@@ -580,6 +581,7 @@ fn create_server_schema(
 mod tests {
     use super::*;
 
+    use log::debug;
     use sodiumoxide::crypto::box_;
     use sodiumoxide::crypto::sign;
     use tempdir;

@@ -4,6 +4,7 @@ use std::io::Cursor;
 use std::path::Path;
 
 use chrono::offset::Utc;
+use failure::Fail;
 use hyper;
 use openssl::crypto::hash::Type as HashType;
 use openssl::crypto::pkey::PKey;

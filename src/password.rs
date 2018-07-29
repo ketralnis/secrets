@@ -9,6 +9,8 @@ use std::os::unix::io::FromRawFd;
 use std::process::Command;
 use std::string;
 
+use failure::Fail;
+use log::{debug, log};
 use tempfile;
 
 use crate::getpass;

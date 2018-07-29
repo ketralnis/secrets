@@ -1,13 +1,6 @@
 #![feature(rust_2018_preview, use_extern_macros)]
 
 #[macro_use]
-extern crate failure;
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate serde_derive;
-
-#[macro_use]
 mod utils;
 mod api;
 mod common;
